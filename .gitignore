@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Compiled output
+dist/
+
+# Environment & secrets (NEVER commit real credentials)
+.env
+.env.*
+!.env.example
+*firebase-adminsdk*.json
+service-account*.json
+
+# Logs & coverage
+logs/
+*.log
+npm-debug.log*
+coverage/
+
+# OS & IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

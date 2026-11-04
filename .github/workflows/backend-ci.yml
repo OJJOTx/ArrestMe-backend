@@ -1,0 +1,107 @@
+name: Backend CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Build, Lint & Test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies cleanly
+        run: npm ci
+
+      - name: Type-check TypeScript
+        run: npm run typecheck
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run unit and HTTP integration tests
+        run: npm test
+
+      - name: Build production JavaScript
+        run: npm run build
+
+      - name: Verify OpenAPI 3.1 specification is up to date
+        run: npm run openapi:verify
+
+  mysql-integration:
+    name: MySQL 8 Migration & Repository Verification
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci_root_password
+          MYSQL_DATABASE: arrestme_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci_root_password"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies cleanly
+        run: npm ci
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Execute SQL migrations against MySQL 8.0
+        env:
+          NODE_ENV: test
+          DATABASE_HOST: 127.0.0.1
+          DATABASE_PORT: 3306
+          DATABASE_NAME: arrestme_ci
+          DATABASE_USER: root
+          DATABASE_PASSWORD: ci_root_password
+          JWT_ACCESS_SECRET: ci_test_only_access_secret_minimum_32_characters_long
+          MAINTENANCE_API_KEY: ci_test_only_maintenance_secret_minimum_32_chars
+        run: npm run migrate && npm run migrate:status
+
+      - name: Run full test suite including MySQL 8 integration tests
+        env:
+          NODE_ENV: test
+          TEST_WITH_MYSQL: 'true'
+          DATABASE_HOST: 127.0.0.1
+          DATABASE_PORT: 3306
+          DATABASE_NAME: arrestme_ci
+          DATABASE_USER: root
+          DATABASE_PASSWORD: ci_root_password
+          JWT_ACCESS_SECRET: ci_test_only_access_secret_minimum_32_characters_long
+          MAINTENANCE_API_KEY: ci_test_only_maintenance_secret_minimum_32_chars
+        run: npm test

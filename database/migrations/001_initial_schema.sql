@@ -1,0 +1,298 @@
+-- =============================================================================
+-- Migration: 001_initial_schema.sql
+-- Description: Initial ArrestMe Cloud Backend relational schema (MySQL 8.0+)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS users (
+  id CHAR(36) NOT NULL,
+  username VARCHAR(32) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  display_name VARCHAR(80) NOT NULL,
+  avatar_url VARCHAR(512) NULL,
+  account_status ENUM('ACTIVE', 'SUSPENDED', 'DELETED') NOT NULL DEFAULT 'ACTIVE',
+  created_at DATETIME(3) NOT NULL,
+  updated_at DATETIME(3) NOT NULL,
+  last_login_at DATETIME(3) NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_users_username (username),
+  UNIQUE KEY uq_users_email (email),
+  KEY idx_users_status (account_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS devices (
+  id CHAR(36) NOT NULL,
+  user_id CHAR(36) NOT NULL,
+  installation_id VARCHAR(128) NULL,
+  device_name VARCHAR(100) NOT NULL,
+  platform ENUM('ANDROID') NOT NULL DEFAULT 'ANDROID',
+  manufacturer VARCHAR(64) NULL,
+  model VARCHAR(64) NULL,
+  app_version VARCHAR(48) NOT NULL,
+  android_version VARCHAR(32) NOT NULL,
+  sdk_int INT NULL,
+  device_status ENUM('ACTIVE', 'INACTIVE', 'REVOKED') NOT NULL DEFAULT 'ACTIVE',
+  last_seen_at DATETIME(3) NULL,
+  revoked_at DATETIME(3) NULL,
+  created_at DATETIME(3) NOT NULL,
+  updated_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_devices_user_installation (user_id, installation_id),
+  KEY idx_devices_user_status (user_id, device_status),
+  CONSTRAINT fk_devices_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  id CHAR(36) NOT NULL,
+  user_id CHAR(36) NOT NULL,
+  family_id CHAR(36) NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  device_id CHAR(36) NULL,
+  user_agent VARCHAR(255) NULL,
+  ip_address VARCHAR(64) NULL,
+  expires_at DATETIME(3) NOT NULL,
+  revoked_at DATETIME(3) NULL,
+  revoked_reason VARCHAR(64) NULL,
+  replaced_by_id CHAR(36) NULL,
+  created_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_refresh_tokens_hash (token_hash),
+  KEY idx_refresh_tokens_user_active (user_id, revoked_at),
+  KEY idx_refresh_tokens_family (family_id),
+  KEY idx_refresh_tokens_expires (expires_at),
+  CONSTRAINT fk_refresh_tokens_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_refresh_tokens_device FOREIGN KEY (device_id) REFERENCES devices (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS device_push_tokens (
+  id CHAR(36) NOT NULL,
+  device_id CHAR(36) NOT NULL,
+  fcm_token VARCHAR(512) NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  token_status ENUM('ACTIVE', 'INVALID', 'REVOKED') NOT NULL DEFAULT 'ACTIVE',
+  invalidated_reason VARCHAR(128) NULL,
+  last_validated_at DATETIME(3) NULL,
+  created_at DATETIME(3) NOT NULL,
+  updated_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_device_push_tokens_hash (token_hash),
+  KEY idx_device_push_tokens_device_status (device_id, token_status),
+  CONSTRAINT fk_push_tokens_device FOREIGN KEY (device_id) REFERENCES devices (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS partnerships (
+  id CHAR(36) NOT NULL,
+  sender_user_id CHAR(36) NOT NULL,
+  recipient_user_id CHAR(36) NOT NULL,
+  user_low_id CHAR(36) NOT NULL,
+  user_high_id CHAR(36) NOT NULL,
+  state ENUM('PENDING', 'ACCEPTED', 'REJECTED', 'CANCELLED', 'BLOCKED') NOT NULL DEFAULT 'PENDING',
+  blocked_by_user_id CHAR(36) NULL,
+  responded_at DATETIME(3) NULL,
+  created_at DATETIME(3) NOT NULL,
+  updated_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_partnerships_pair (user_low_id, user_high_id),
+  KEY idx_partnerships_sender_state (sender_user_id, state),
+  KEY idx_partnerships_recipient_state (recipient_user_id, state),
+  CONSTRAINT fk_partnerships_sender FOREIGN KEY (sender_user_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_partnerships_recipient FOREIGN KEY (recipient_user_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_partnerships_low FOREIGN KEY (user_low_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_partnerships_high FOREIGN KEY (user_high_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_partnerships_blocked_by FOREIGN KEY (blocked_by_user_id) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS partner_permissions (
+  permission_id CHAR(36) NOT NULL,
+  owner_user_id CHAR(36) NOT NULL,
+  partner_user_id CHAR(36) NOT NULL,
+  target_device_id CHAR(36) NOT NULL,
+  maximum_session_duration INT NOT NULL,
+  allowed_time_windows JSON NULL,
+  allowed_session_types JSON NOT NULL,
+  blocking_config_limits JSON NOT NULL,
+  one_time_only TINYINT(1) NOT NULL DEFAULT 0,
+  used_count INT NOT NULL DEFAULT 0,
+  version INT NOT NULL DEFAULT 1,
+  valid_from DATETIME(3) NOT NULL,
+  expires_at DATETIME(3) NOT NULL,
+  revoked_at DATETIME(3) NULL,
+  revoked_by_user_id CHAR(36) NULL,
+  revoke_reason VARCHAR(255) NULL,
+  created_at DATETIME(3) NOT NULL,
+  updated_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (permission_id),
+  KEY idx_permissions_owner_active (owner_user_id, revoked_at, expires_at),
+  KEY idx_permissions_partner_active (partner_user_id, revoked_at, expires_at),
+  KEY idx_permissions_device_active (target_device_id, revoked_at, expires_at),
+  CONSTRAINT fk_permissions_owner FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_permissions_partner FOREIGN KEY (partner_user_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_permissions_device FOREIGN KEY (target_device_id) REFERENCES devices (id) ON DELETE CASCADE,
+  CONSTRAINT fk_permissions_revoked_by FOREIGN KEY (revoked_by_user_id) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS arrest_sessions (
+  session_id CHAR(36) NOT NULL,
+  local_session_id VARCHAR(64) NULL,
+  owner_user_id CHAR(36) NOT NULL,
+  target_device_id CHAR(36) NOT NULL,
+  initiated_by_user_id CHAR(36) NOT NULL,
+  authorization_id CHAR(36) NULL,
+  idempotency_key VARCHAR(128) NULL,
+  session_type ENUM('SELF_ARREST', 'PARTNER_ARREST', 'MUTUAL_ARREST') NOT NULL,
+  goal VARCHAR(255) NOT NULL,
+  blocking_configuration JSON NOT NULL,
+  requested_duration INT NOT NULL,
+  status ENUM(
+    'REQUESTED',
+    'DELIVERED',
+    'ACTIVE',
+    'PAUSED',
+    'INTERRUPTED',
+    'COMPLETED',
+    'RELEASED_EARLY',
+    'EMERGENCY_STOPPED',
+    'REJECTED',
+    'EXPIRED',
+    'CANCELLED'
+  ) NOT NULL DEFAULT 'REQUESTED',
+  local_engine_state ENUM(
+    'IDLE',
+    'PREPARING',
+    'ACTIVE',
+    'PAUSED',
+    'COMPLETED',
+    'EMERGENCY_STOPPED',
+    'INTERRUPTED'
+  ) NULL,
+  requested_at DATETIME(3) NOT NULL,
+  accepted_at DATETIME(3) NULL,
+  started_at DATETIME(3) NULL,
+  expected_end_at DATETIME(3) NULL,
+  completed_at DATETIME(3) NULL,
+  completion_reason VARCHAR(255) NULL,
+  created_at DATETIME(3) NOT NULL,
+  updated_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (session_id),
+  UNIQUE KEY uq_sessions_initiator_idem (initiated_by_user_id, idempotency_key),
+  KEY idx_sessions_device_status (target_device_id, status),
+  KEY idx_sessions_owner_status (owner_user_id, status, created_at),
+  KEY idx_sessions_initiator_created (initiated_by_user_id, created_at),
+  KEY idx_sessions_auth_requested (authorization_id, requested_at),
+  CONSTRAINT fk_sessions_owner FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_sessions_device FOREIGN KEY (target_device_id) REFERENCES devices (id) ON DELETE CASCADE,
+  CONSTRAINT fk_sessions_initiator FOREIGN KEY (initiated_by_user_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_sessions_authorization FOREIGN KEY (authorization_id) REFERENCES partner_permissions (permission_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS session_commands (
+  sequence_no BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  command_id CHAR(36) NOT NULL,
+  session_id CHAR(36) NOT NULL,
+  target_device_id CHAR(36) NOT NULL,
+  issued_by_user_id CHAR(36) NOT NULL,
+  command_type ENUM(
+    'START_ARREST',
+    'REQUEST_RELEASE',
+    'APPROVE_RELEASE',
+    'DENY_RELEASE',
+    'END_SESSION',
+    'SYNC_SESSION'
+  ) NOT NULL,
+  payload JSON NOT NULL,
+  status ENUM(
+    'PENDING',
+    'DELIVERED',
+    'ACKNOWLEDGED',
+    'EXECUTED',
+    'REJECTED',
+    'EXPIRED',
+    'FAILED'
+  ) NOT NULL DEFAULT 'PENDING',
+  idempotency_key VARCHAR(128) NOT NULL,
+  result_metadata JSON NULL,
+  failure_reason VARCHAR(255) NULL,
+  push_delivery_status ENUM(
+    'NOT_ATTEMPTED',
+    'SENT',
+    'NO_ACTIVE_TOKEN',
+    'SKIPPED_DISABLED',
+    'FAILED_RETRYABLE',
+    'FAILED_PERMANENT'
+  ) NOT NULL DEFAULT 'NOT_ATTEMPTED',
+  push_attempts INT NOT NULL DEFAULT 0,
+  last_push_attempt_at DATETIME(3) NULL,
+  created_at DATETIME(3) NOT NULL,
+  expires_at DATETIME(3) NOT NULL,
+  delivered_at DATETIME(3) NULL,
+  acknowledged_at DATETIME(3) NULL,
+  executed_at DATETIME(3) NULL,
+  updated_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (sequence_no),
+  UNIQUE KEY uq_session_commands_id (command_id),
+  UNIQUE KEY uq_session_commands_idempotency (idempotency_key),
+  KEY idx_commands_device_poll (target_device_id, status, sequence_no),
+  KEY idx_commands_session_seq (session_id, sequence_no),
+  KEY idx_commands_status_expires (status, expires_at),
+  KEY idx_commands_push_retry (push_delivery_status, status, expires_at),
+  CONSTRAINT fk_commands_session FOREIGN KEY (session_id) REFERENCES arrest_sessions (session_id) ON DELETE CASCADE,
+  CONSTRAINT fk_commands_device FOREIGN KEY (target_device_id) REFERENCES devices (id) ON DELETE CASCADE,
+  CONSTRAINT fk_commands_issuer FOREIGN KEY (issued_by_user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS session_sync_events (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  session_id CHAR(36) NOT NULL,
+  device_id CHAR(36) NOT NULL,
+  client_event_id VARCHAR(128) NOT NULL,
+  event_type VARCHAR(64) NOT NULL,
+  from_engine_state VARCHAR(32) NULL,
+  to_engine_state VARCHAR(32) NULL,
+  occurred_at_client_ms BIGINT NOT NULL,
+  metadata JSON NULL,
+  recorded_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_sync_events_client_id (session_id, client_event_id),
+  KEY idx_sync_events_session_recorded (session_id, recorded_at),
+  CONSTRAINT fk_sync_events_session FOREIGN KEY (session_id) REFERENCES arrest_sessions (session_id) ON DELETE CASCADE,
+  CONSTRAINT fk_sync_events_device FOREIGN KEY (device_id) REFERENCES devices (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS release_requests (
+  id CHAR(36) NOT NULL,
+  session_id CHAR(36) NOT NULL,
+  requester_user_id CHAR(36) NOT NULL,
+  approver_user_id CHAR(36) NOT NULL,
+  reason VARCHAR(500) NOT NULL,
+  status ENUM('PENDING', 'APPROVED', 'DENIED', 'EXPIRED', 'CANCELLED') NOT NULL DEFAULT 'PENDING',
+  decision_reason VARCHAR(500) NULL,
+  resolution_command_id CHAR(36) NULL,
+  requested_at DATETIME(3) NOT NULL,
+  decided_at DATETIME(3) NULL,
+  updated_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  KEY idx_release_requests_session_status (session_id, status),
+  KEY idx_release_requests_approver_status (approver_user_id, status, requested_at),
+  KEY idx_release_requests_requester (requester_user_id, requested_at),
+  CONSTRAINT fk_release_requests_session FOREIGN KEY (session_id) REFERENCES arrest_sessions (session_id) ON DELETE CASCADE,
+  CONSTRAINT fk_release_requests_requester FOREIGN KEY (requester_user_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_release_requests_approver FOREIGN KEY (approver_user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  actor_user_id CHAR(36) NULL,
+  actor_device_id CHAR(36) NULL,
+  action VARCHAR(80) NOT NULL,
+  resource_type VARCHAR(48) NOT NULL,
+  resource_id VARCHAR(64) NOT NULL,
+  result ENUM('SUCCESS', 'DENIED', 'FAILURE') NOT NULL,
+  ip_address VARCHAR(64) NULL,
+  request_id VARCHAR(64) NULL,
+  metadata JSON NULL,
+  created_at DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  KEY idx_audit_actor_created (actor_user_id, created_at),
+  KEY idx_audit_resource_created (resource_type, resource_id, created_at),
+  KEY idx_audit_action_created (action, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
