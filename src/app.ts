@@ -311,7 +311,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     proposalsService,
     schedulesService
   );
-  const commandsService = new CommandsService(store, auditService, clock);
+  const commandsService = new CommandsService(store, auditService, clock, schedulesService);
   const sessionsService = new SessionsService(
     store,
     permissionsService,

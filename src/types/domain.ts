@@ -299,8 +299,35 @@ export interface ScheduledArrestRecord {
   occurrencesCompleted: number;
   maxOccurrences: number;
   nextOccurrenceAt: Date | null;
+  lastMaterializedSessionId?: string | null;
+  lastMaterializedAt?: Date | null;
   status: ScheduledArrestStatus;
   createdAt: Date;
+  updatedAt: Date;
+}
+
+export type RemoteExecutionPhase =
+  | 'REQUESTED'
+  | 'AUTHORIZED'
+  | 'QUEUED'
+  | 'DELIVERED'
+  | 'EXECUTING'
+  | 'ACTIVE'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'EXPIRED';
+
+export interface SelectableAppCatalogItem {
+  packageName: string;
+  appLabel: string;
+  category: string;
+  isStudyCandidate: boolean;
+}
+
+export interface DeviceAppCatalogRecord {
+  deviceId: string;
+  ownerUserId: string;
+  apps: SelectableAppCatalogItem[];
   updatedAt: Date;
 }
 

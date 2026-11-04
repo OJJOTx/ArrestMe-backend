@@ -4,12 +4,14 @@ import { z } from 'zod';
 import { extractRequestContext } from '../../middleware/authenticate';
 import { ErrorResponseSchema, UuidParamSchema } from '../../shared/http-schemas';
 import {
+  DeviceAppCatalogResponseSchema,
   DeviceResponseSchema,
   ListDevicesQuerySchema,
   PaginatedDevicesResponseSchema,
   RegisterDeviceBodySchema,
   RegisterPushTokenBodySchema,
-  UpdateDeviceBodySchema
+  UpdateDeviceBodySchema,
+  UpsertDeviceAppCatalogBodySchema
 } from './devices.schemas';
 import type { DevicesService } from './devices.service';
 
@@ -182,6 +184,62 @@ export function registerDevicesRoutes(
         extractRequestContext(request)
       );
       return reply.status(200).send(result);
+    }
+  );
+
+  router.put(
+    '/api/v1/devices/:id/app-catalog',
+    {
+      preHandler: [deps.authenticate],
+      schema: {
+        tags: ['Devices'],
+        summary: 'Upload controlled selectable user app catalog for an owned device (filters out internal system apps)',
+        security: [{ bearerAuth: [] }],
+        params: UuidParamSchema,
+        body: UpsertDeviceAppCatalogBodySchema,
+        response: {
+          200: z.object({ catalog: DeviceAppCatalogResponseSchema }),
+          400: ErrorResponseSchema,
+          401: ErrorResponseSchema,
+          404: ErrorResponseSchema,
+          409: ErrorResponseSchema
+        }
+      }
+    },
+    async (request, reply) => {
+      const catalog = await deps.devicesService.upsertDeviceAppCatalog(
+        request.authUser!.id,
+        request.params.id,
+        request.body.apps,
+        extractRequestContext(request)
+      );
+      return reply.status(200).send({ catalog });
+    }
+  );
+
+  router.get(
+    '/api/v1/devices/:id/app-catalog',
+    {
+      preHandler: [deps.authenticate],
+      schema: {
+        tags: ['Devices'],
+        summary: 'Get controlled selectable app catalog for a device (accessible to device owner and accepted partners)',
+        security: [{ bearerAuth: [] }],
+        params: UuidParamSchema,
+        response: {
+          200: z.object({ catalog: DeviceAppCatalogResponseSchema }),
+          401: ErrorResponseSchema,
+          403: ErrorResponseSchema,
+          404: ErrorResponseSchema
+        }
+      }
+    },
+    async (request, reply) => {
+      const catalog = await deps.devicesService.getDeviceAppCatalog(
+        request.authUser!.id,
+        request.params.id
+      );
+      return reply.status(200).send({ catalog });
     }
   );
 }

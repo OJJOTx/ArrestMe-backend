@@ -12,6 +12,7 @@ import {
   type BlockingConfigurationV1,
   type CloudSessionStatus,
   type PaginatedResult,
+  type RemoteExecutionPhase,
   type SessionCommandRecord,
   type SessionType
 } from '../../types/domain';
@@ -29,6 +30,7 @@ export interface SerializedArrestSession {
   blockingConfiguration: BlockingConfigurationV1;
   requestedDurationMinutes: number;
   status: CloudSessionStatus;
+  remoteExecutionPhase: RemoteExecutionPhase;
   localEngineState: AndroidEngineState | null;
   requestedAt: string;
   acceptedAt: string | null;
@@ -38,6 +40,54 @@ export interface SerializedArrestSession {
   completionReason: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface SerializedLiveDashboardItem {
+  session: SerializedArrestSession;
+  owner: {
+    id: string;
+    username: string;
+    displayName: string;
+    avatarUrl: string | null;
+  };
+  initiator: {
+    id: string;
+    username: string;
+    displayName: string;
+    avatarUrl: string | null;
+  };
+  targetDevice: {
+    deviceId: string;
+    deviceName: string;
+    deviceModel: string | null;
+    platform: string;
+    deviceStatus: string;
+    lastSeenAt: string | null;
+  } | null;
+  remainingSeconds: number | null;
+  pendingReleaseRequestsCount: number;
+}
+
+export function computeRemoteExecutionPhase(session: ArrestSessionRecord): RemoteExecutionPhase {
+  switch (session.status) {
+    case 'REQUESTED':
+      return 'QUEUED';
+    case 'DELIVERED':
+      return session.localEngineState === 'PREPARING' ? 'EXECUTING' : 'DELIVERED';
+    case 'ACTIVE':
+    case 'PAUSED':
+    case 'INTERRUPTED':
+      return 'ACTIVE';
+    case 'COMPLETED':
+    case 'RELEASED_EARLY':
+    case 'EMERGENCY_STOPPED':
+      return 'COMPLETED';
+    case 'REJECTED':
+    case 'CANCELLED':
+      return 'FAILED';
+    case 'EXPIRED':
+      return 'EXPIRED';
+  }
 }
 
 export function serializeSession(session: ArrestSessionRecord): SerializedArrestSession {
@@ -53,6 +103,7 @@ export function serializeSession(session: ArrestSessionRecord): SerializedArrest
     blockingConfiguration: session.blockingConfiguration,
     requestedDurationMinutes: session.requestedDuration,
     status: session.status,
+    remoteExecutionPhase: computeRemoteExecutionPhase(session),
     localEngineState: session.localEngineState,
     requestedAt: session.requestedAt.toISOString(),
     acceptedAt: session.acceptedAt ? session.acceptedAt.toISOString() : null,
@@ -389,6 +440,86 @@ export class SessionsService {
   async listActiveSessions(userId: string): Promise<SerializedArrestSession[]> {
     const sessions = await this.store.repositories.sessions.listActiveForUser(userId);
     return sessions.map(serializeSession);
+  }
+
+  async listLiveDashboardSessions(userId: string): Promise<SerializedLiveDashboardItem[]> {
+    const now = this.clock.now();
+    const page = await this.store.repositories.sessions.listForUser(userId, {
+      role: 'all',
+      limit: 25,
+      offset: 0
+    });
+
+    const sorted = [...page.items].sort((a, b) => {
+      const aActive = !TERMINAL_CLOUD_SESSION_STATUSES.includes(a.status);
+      const bActive = !TERMINAL_CLOUD_SESSION_STATUSES.includes(b.status);
+      if (aActive !== bActive) {
+        return aActive ? -1 : 1;
+      }
+      return b.updatedAt.getTime() - a.updatedAt.getTime();
+    });
+
+    const pendingReleases = await this.store.repositories.releaseRequests.listForUser(userId, {
+      role: 'all',
+      status: 'PENDING',
+      limit: 100,
+      offset: 0
+    });
+
+    const items: SerializedLiveDashboardItem[] = [];
+    for (const s of sorted) {
+      const [owner, initiator, targetDevice] = await Promise.all([
+        this.store.repositories.users.findById(s.ownerUserId),
+        this.store.repositories.users.findById(s.initiatedByUserId),
+        this.store.repositories.devices.findById(s.targetDeviceId)
+      ]);
+      const sessionPendingReleasesCount = pendingReleases.items.filter(
+        (r) => r.sessionId === s.sessionId
+      ).length;
+
+      let remainingSeconds: number | null = null;
+      if (
+        !TERMINAL_CLOUD_SESSION_STATUSES.includes(s.status) &&
+        s.expectedEndAt !== null
+      ) {
+        remainingSeconds = Math.max(
+          0,
+          Math.floor((s.expectedEndAt.getTime() - now.getTime()) / 1000)
+        );
+      } else if (s.status === 'REQUESTED' || s.status === 'DELIVERED') {
+        remainingSeconds = s.requestedDuration * 60;
+      }
+
+      items.push({
+        session: serializeSession(s),
+        owner: {
+          id: owner?.id ?? s.ownerUserId,
+          username: owner?.username ?? 'unknown',
+          displayName: owner?.displayName ?? 'Unknown User',
+          avatarUrl: owner?.avatarUrl ?? null
+        },
+        initiator: {
+          id: initiator?.id ?? s.initiatedByUserId,
+          username: initiator?.username ?? 'unknown',
+          displayName: initiator?.displayName ?? 'Unknown User',
+          avatarUrl: initiator?.avatarUrl ?? null
+        },
+        targetDevice: targetDevice
+          ? {
+              deviceId: targetDevice.id,
+              deviceName: targetDevice.deviceName,
+              deviceModel: targetDevice.model,
+              platform: targetDevice.platform,
+              deviceStatus: targetDevice.deviceStatus,
+              lastSeenAt: targetDevice.lastSeenAt ? targetDevice.lastSeenAt.toISOString() : null
+            }
+          : null,
+        remainingSeconds,
+        pendingReleaseRequestsCount: sessionPendingReleasesCount
+      });
+    }
+
+    return items;
   }
 
   async getSessionById(userId: string, sessionId: string): Promise<SerializedArrestSession> {

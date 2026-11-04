@@ -24,6 +24,7 @@ import {
   type CloudSessionStatus,
   type CommandStatus,
   type CommandType,
+  type DeviceAppCatalogRecord,
   type DevicePlatform,
   type DevicePushTokenRecord,
   type DeviceRecord,
@@ -42,6 +43,7 @@ import {
   type ReleaseRequestStatus,
   type ScheduledArrestRecord,
   type ScheduledArrestStatus,
+  type SelectableAppCatalogItem,
   type SessionCommandRecord,
   type SessionSyncEventRecord,
   type SessionType,
@@ -52,6 +54,7 @@ import type {
   AuditLogsRepository,
   CommandsRepository,
   DataStore,
+  DeviceAppCatalogsRepository,
   DevicesRepository,
   PartnerPermissionsRepository,
   PartnershipsRepository,
@@ -1278,6 +1281,14 @@ function mapScheduledArrestRow(row: RowDataPacket): ScheduledArrestRecord {
     occurrencesCompleted: Number(row.occurrences_completed),
     maxOccurrences: Number(row.max_occurrences),
     nextOccurrenceAt: fromMysqlDateTime(row.next_occurrence_at),
+    lastMaterializedSessionId:
+      row.last_materialized_session_id !== undefined && row.last_materialized_session_id !== null
+        ? String(row.last_materialized_session_id)
+        : null,
+    lastMaterializedAt:
+      row.last_materialized_at !== undefined
+        ? fromMysqlDateTime(row.last_materialized_at)
+        : null,
     status: row.status as ScheduledArrestStatus,
     createdAt: fromMysqlDateTime(row.created_at)!,
     updatedAt: fromMysqlDateTime(row.updated_at)!
@@ -1765,6 +1776,8 @@ class MysqlScheduledArrestsRepository implements ScheduledArrestsRepository {
       status?: ScheduledArrestStatus;
       occurrencesCompleted?: number;
       nextOccurrenceAt?: Date | null;
+      lastMaterializedSessionId?: string | null;
+      lastMaterializedAt?: Date | null;
       updatedAt: Date;
     }
   ): Promise<ScheduledArrestRecord> {
@@ -1783,6 +1796,16 @@ class MysqlScheduledArrestsRepository implements ScheduledArrestsRepository {
       setClauses.push('next_occurrence_at = ?');
       params.push(updates.nextOccurrenceAt ? toMysqlDateTime(updates.nextOccurrenceAt) : null);
     }
+    if (updates.lastMaterializedSessionId !== undefined) {
+      setClauses.push('last_materialized_session_id = ?');
+      params.push(updates.lastMaterializedSessionId);
+    }
+    if (updates.lastMaterializedAt !== undefined) {
+      setClauses.push('last_materialized_at = ?');
+      params.push(
+        updates.lastMaterializedAt ? toMysqlDateTime(updates.lastMaterializedAt) : null
+      );
+    }
 
     params.push(scheduleId);
     await this.db.execute(
@@ -1794,6 +1817,19 @@ class MysqlScheduledArrestsRepository implements ScheduledArrestsRepository {
       throw Errors.notFound('SCHEDULE_NOT_FOUND', 'Scheduled arrest was not found.');
     }
     return updated;
+  }
+
+  async listDueForDevice(deviceId: string, now: Date): Promise<ScheduledArrestRecord[]> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      `SELECT * FROM scheduled_arrests
+       WHERE target_device_id = ?
+         AND status = 'SCHEDULED'
+         AND next_occurrence_at IS NOT NULL
+         AND next_occurrence_at <= ?
+       ORDER BY next_occurrence_at ASC`,
+      [deviceId, toMysqlDateTime(now)]
+    );
+    return rows.map(mapScheduledArrestRow);
   }
 
   async revokeByPermissionId(permissionId: string, now: Date): Promise<number> {
@@ -2671,11 +2707,56 @@ class MysqlAuditLogsRepository implements AuditLogsRepository {
   }
 }
 
+class MysqlDeviceAppCatalogsRepository implements DeviceAppCatalogsRepository {
+  constructor(private readonly db: SqlExecutor) {}
+
+  async findByDeviceId(deviceId: string): Promise<DeviceAppCatalogRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM device_app_catalogs WHERE device_id = ? LIMIT 1',
+      [deviceId]
+    );
+    if (!rows[0]) return null;
+    const row = rows[0];
+    return {
+      deviceId: String(row.device_id),
+      ownerUserId: String(row.owner_user_id),
+      apps: parseJsonColumn<SelectableAppCatalogItem[]>(row.apps_json),
+      updatedAt: fromMysqlDateTime(row.updated_at)!
+    };
+  }
+
+  async upsert(params: {
+    deviceId: string;
+    ownerUserId: string;
+    apps: SelectableAppCatalogItem[];
+    now: Date;
+  }): Promise<DeviceAppCatalogRecord> {
+    const ts = toMysqlDateTime(params.now);
+    const appsJson = JSON.stringify(params.apps);
+    await this.db.execute(
+      `INSERT INTO device_app_catalogs (device_id, owner_user_id, apps_json, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         owner_user_id = VALUES(owner_user_id),
+         apps_json = VALUES(apps_json),
+         updated_at = VALUES(updated_at)`,
+      [params.deviceId, params.ownerUserId, appsJson, ts]
+    );
+    return {
+      deviceId: params.deviceId,
+      ownerUserId: params.ownerUserId,
+      apps: params.apps,
+      updatedAt: params.now
+    };
+  }
+}
+
 function createBundle(executor: SqlExecutor): RepositoryBundle {
   return {
     users: new MysqlUsersRepository(executor),
     refreshTokens: new MysqlRefreshTokensRepository(executor),
     devices: new MysqlDevicesRepository(executor),
+    deviceAppCatalogs: new MysqlDeviceAppCatalogsRepository(executor),
     pushTokens: new MysqlPushTokensRepository(executor),
     partnerships: new MysqlPartnershipsRepository(executor),
     partnerPermissions: new MysqlPartnerPermissionsRepository(executor),

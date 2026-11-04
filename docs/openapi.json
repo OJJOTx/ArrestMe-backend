@@ -3697,6 +3697,554 @@
         }
       }
     },
+    "/api/v1/devices/{id}/app-catalog": {
+      "put": {
+        "summary": "Upload controlled selectable user app catalog for an owned device (filters out internal system apps)",
+        "tags": [
+          "Devices"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "apps": {
+                    "maxItems": 300,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "packageName": {
+                          "type": "string",
+                          "minLength": 3,
+                          "maxLength": 150,
+                          "pattern": "^[a-zA-Z0-9_.]+$"
+                        },
+                        "appLabel": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
+                        },
+                        "category": {
+                          "default": "USER_APP",
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 60
+                        },
+                        "isStudyCandidate": {
+                          "default": false,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "packageName",
+                        "appLabel"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "apps"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "catalog": {
+                      "type": "object",
+                      "properties": {
+                        "deviceId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "ownerUserId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "apps": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "packageName": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 150,
+                                "pattern": "^[a-zA-Z0-9_.]+$"
+                              },
+                              "appLabel": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "category": {
+                                "default": "USER_APP",
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 60
+                              },
+                              "isStudyCandidate": {
+                                "default": false,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "packageName",
+                              "appLabel",
+                              "category",
+                              "isStudyCandidate"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "filteredOutSystemCount": {
+                          "default": 0,
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "updatedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "deviceId",
+                        "ownerUserId",
+                        "apps",
+                        "filteredOutSystemCount",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "catalog"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Get controlled selectable app catalog for a device (accessible to device owner and accepted partners)",
+        "tags": [
+          "Devices"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "catalog": {
+                      "type": "object",
+                      "properties": {
+                        "deviceId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "ownerUserId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "apps": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "packageName": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 150,
+                                "pattern": "^[a-zA-Z0-9_.]+$"
+                              },
+                              "appLabel": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "category": {
+                                "default": "USER_APP",
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 60
+                              },
+                              "isStudyCandidate": {
+                                "default": false,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "packageName",
+                              "appLabel",
+                              "category",
+                              "isStudyCandidate"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "filteredOutSystemCount": {
+                          "default": 0,
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "updatedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "deviceId",
+                        "ownerUserId",
+                        "apps",
+                        "filteredOutSystemCount",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "catalog"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/partners/discover": {
       "get": {
         "summary": "Discover a user by exact username or invite code and retrieve relationship state and pending counts",
@@ -9084,6 +9632,24 @@
                                 "maximum": 9007199254740991
                               },
                               "nextOccurrenceAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "lastMaterializedSessionId": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "lastMaterializedAt": {
                                 "type": [
                                   "string",
                                   "null"
@@ -23562,6 +24128,20 @@
                                 "CANCELLED"
                               ]
                             },
+                            "remoteExecutionPhase": {
+                              "type": "string",
+                              "enum": [
+                                "REQUESTED",
+                                "AUTHORIZED",
+                                "QUEUED",
+                                "DELIVERED",
+                                "EXECUTING",
+                                "ACTIVE",
+                                "COMPLETED",
+                                "FAILED",
+                                "EXPIRED"
+                              ]
+                            },
                             "localEngineState": {
                               "anyOf": [
                                 {
@@ -23633,6 +24213,7 @@
                             "blockingConfiguration",
                             "requestedDurationMinutes",
                             "status",
+                            "remoteExecutionPhase",
                             "localEngineState",
                             "requestedAt",
                             "acceptedAt",
@@ -23952,6 +24533,24 @@
                               "maximum": 9007199254740991
                             },
                             "nextOccurrenceAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "lastMaterializedSessionId": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "lastMaterializedAt": {
                               "type": [
                                 "string",
                                 "null"
@@ -27420,6 +28019,24 @@
                               "null"
                             ]
                           },
+                          "lastMaterializedSessionId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lastMaterializedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "status": {
                             "type": "string",
                             "enum": [
@@ -27864,6 +28481,24 @@
                           "maximum": 9007199254740991
                         },
                         "nextOccurrenceAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "lastMaterializedSessionId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastMaterializedAt": {
                           "type": [
                             "string",
                             "null"
@@ -28338,6 +28973,24 @@
                             "null"
                           ]
                         },
+                        "lastMaterializedSessionId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastMaterializedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "status": {
                           "type": "string",
                           "enum": [
@@ -28391,6 +29044,985 @@
             }
           },
           "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scheduled-arrests/{id}/trigger": {
+      "post": {
+        "summary": "Materialize a due scheduled or recurring Arrest occurrence into an active session command after verifying authorization and time bounds",
+        "tags": [
+          "Scheduled Arrests"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schedule": {
+                      "type": "object",
+                      "properties": {
+                        "scheduleId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "proposalId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "permissionId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "owner": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "username": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            },
+                            "avatarUrl": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "username",
+                            "displayName",
+                            "avatarUrl"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "partner": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "username": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            },
+                            "avatarUrl": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "username",
+                            "displayName",
+                            "avatarUrl"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "targetDevice": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "deviceName": {
+                              "type": "string"
+                            },
+                            "platform": {
+                              "type": "string",
+                              "enum": [
+                                "ANDROID"
+                              ]
+                            },
+                            "deviceStatus": {
+                              "type": "string",
+                              "enum": [
+                                "ACTIVE",
+                                "INACTIVE",
+                                "REVOKED"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "deviceName",
+                            "platform",
+                            "deviceStatus"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "scheduleType": {
+                          "type": "string",
+                          "enum": [
+                            "SCHEDULED",
+                            "RECURRING"
+                          ]
+                        },
+                        "sessionType": {
+                          "type": "string",
+                          "enum": [
+                            "SELF_ARREST",
+                            "PARTNER_ARREST",
+                            "MUTUAL_ARREST"
+                          ]
+                        },
+                        "goal": {
+                          "type": "string"
+                        },
+                        "durationMinutes": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "blockingConfiguration": {
+                          "type": "object",
+                          "properties": {
+                            "schemaVersion": {
+                              "default": 1,
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            "ruleMode": {
+                              "default": "BLOCK_SELECTED",
+                              "type": "string",
+                              "enum": [
+                                "BLOCK_SELECTED",
+                                "STRICT_ALLOWLIST",
+                                "WHITELIST_ONLY"
+                              ]
+                            },
+                            "allowedCategories": {
+                              "default": [
+                                "CALLS",
+                                "STUDY_APPS"
+                              ],
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "CALLS",
+                                  "STUDY_APPS"
+                                ]
+                              }
+                            },
+                            "overlayStatusBar": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "disableEmergencyExit": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "blockedPackages": {
+                              "maxItems": 200,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 192
+                              }
+                            },
+                            "allowedStudyPackages": {
+                              "maxItems": 200,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 192
+                              }
+                            }
+                          },
+                          "required": [
+                            "schemaVersion",
+                            "ruleMode",
+                            "allowedCategories",
+                            "overlayStatusBar",
+                            "disableEmergencyExit"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "timezone": {
+                          "type": "string"
+                        },
+                        "scheduledStartAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "scheduledEndAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "recurrenceRule": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "daysOfWeek": {
+                                  "minItems": 1,
+                                  "maxItems": 7,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 6
+                                  }
+                                },
+                                "localStartTime": {
+                                  "type": "string"
+                                },
+                                "localEndTime": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "durationMinutes": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 720
+                                },
+                                "timezone": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64
+                                },
+                                "endDate": {
+                                  "type": "string"
+                                },
+                                "maxOccurrences": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 365
+                                }
+                              },
+                              "required": [
+                                "daysOfWeek",
+                                "localStartTime",
+                                "durationMinutes",
+                                "timezone",
+                                "endDate",
+                                "maxOccurrences"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "occurrencesCompleted": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "maxOccurrences": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "nextOccurrenceAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "lastMaterializedSessionId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastMaterializedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "SCHEDULED",
+                            "ACTIVE",
+                            "COMPLETED",
+                            "CANCELLED",
+                            "REVOKED",
+                            "EXPIRED"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "scheduleId",
+                        "proposalId",
+                        "permissionId",
+                        "owner",
+                        "partner",
+                        "targetDevice",
+                        "scheduleType",
+                        "sessionType",
+                        "goal",
+                        "durationMinutes",
+                        "blockingConfiguration",
+                        "timezone",
+                        "scheduledStartAt",
+                        "scheduledEndAt",
+                        "recurrenceRule",
+                        "occurrencesCompleted",
+                        "maxOccurrences",
+                        "nextOccurrenceAt",
+                        "status",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "commandId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "idempotentReplay": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "schedule",
+                    "sessionId",
+                    "commandId",
+                    "idempotentReplay"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schedule": {
+                      "type": "object",
+                      "properties": {
+                        "scheduleId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "proposalId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "permissionId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "owner": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "username": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            },
+                            "avatarUrl": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "username",
+                            "displayName",
+                            "avatarUrl"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "partner": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "username": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            },
+                            "avatarUrl": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "username",
+                            "displayName",
+                            "avatarUrl"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "targetDevice": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "deviceName": {
+                              "type": "string"
+                            },
+                            "platform": {
+                              "type": "string",
+                              "enum": [
+                                "ANDROID"
+                              ]
+                            },
+                            "deviceStatus": {
+                              "type": "string",
+                              "enum": [
+                                "ACTIVE",
+                                "INACTIVE",
+                                "REVOKED"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "deviceName",
+                            "platform",
+                            "deviceStatus"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "scheduleType": {
+                          "type": "string",
+                          "enum": [
+                            "SCHEDULED",
+                            "RECURRING"
+                          ]
+                        },
+                        "sessionType": {
+                          "type": "string",
+                          "enum": [
+                            "SELF_ARREST",
+                            "PARTNER_ARREST",
+                            "MUTUAL_ARREST"
+                          ]
+                        },
+                        "goal": {
+                          "type": "string"
+                        },
+                        "durationMinutes": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "blockingConfiguration": {
+                          "type": "object",
+                          "properties": {
+                            "schemaVersion": {
+                              "default": 1,
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            "ruleMode": {
+                              "default": "BLOCK_SELECTED",
+                              "type": "string",
+                              "enum": [
+                                "BLOCK_SELECTED",
+                                "STRICT_ALLOWLIST",
+                                "WHITELIST_ONLY"
+                              ]
+                            },
+                            "allowedCategories": {
+                              "default": [
+                                "CALLS",
+                                "STUDY_APPS"
+                              ],
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "CALLS",
+                                  "STUDY_APPS"
+                                ]
+                              }
+                            },
+                            "overlayStatusBar": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "disableEmergencyExit": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "blockedPackages": {
+                              "maxItems": 200,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 192
+                              }
+                            },
+                            "allowedStudyPackages": {
+                              "maxItems": 200,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 192
+                              }
+                            }
+                          },
+                          "required": [
+                            "schemaVersion",
+                            "ruleMode",
+                            "allowedCategories",
+                            "overlayStatusBar",
+                            "disableEmergencyExit"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "timezone": {
+                          "type": "string"
+                        },
+                        "scheduledStartAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "scheduledEndAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "recurrenceRule": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "daysOfWeek": {
+                                  "minItems": 1,
+                                  "maxItems": 7,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 6
+                                  }
+                                },
+                                "localStartTime": {
+                                  "type": "string"
+                                },
+                                "localEndTime": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "durationMinutes": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 720
+                                },
+                                "timezone": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64
+                                },
+                                "endDate": {
+                                  "type": "string"
+                                },
+                                "maxOccurrences": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 365
+                                }
+                              },
+                              "required": [
+                                "daysOfWeek",
+                                "localStartTime",
+                                "durationMinutes",
+                                "timezone",
+                                "endDate",
+                                "maxOccurrences"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "occurrencesCompleted": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "maxOccurrences": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "nextOccurrenceAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "lastMaterializedSessionId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastMaterializedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "SCHEDULED",
+                            "ACTIVE",
+                            "COMPLETED",
+                            "CANCELLED",
+                            "REVOKED",
+                            "EXPIRED"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "scheduleId",
+                        "proposalId",
+                        "permissionId",
+                        "owner",
+                        "partner",
+                        "targetDevice",
+                        "scheduleType",
+                        "sessionType",
+                        "goal",
+                        "durationMinutes",
+                        "blockingConfiguration",
+                        "timezone",
+                        "scheduledStartAt",
+                        "scheduledEndAt",
+                        "recurrenceRule",
+                        "occurrencesCompleted",
+                        "maxOccurrences",
+                        "nextOccurrenceAt",
+                        "status",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "commandId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "idempotentReplay": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "schedule",
+                    "sessionId",
+                    "commandId",
+                    "idempotentReplay"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
             "description": "Default Response",
             "content": {
               "application/json": {
@@ -28810,6 +30442,20 @@
                             "CANCELLED"
                           ]
                         },
+                        "remoteExecutionPhase": {
+                          "type": "string",
+                          "enum": [
+                            "REQUESTED",
+                            "AUTHORIZED",
+                            "QUEUED",
+                            "DELIVERED",
+                            "EXECUTING",
+                            "ACTIVE",
+                            "COMPLETED",
+                            "FAILED",
+                            "EXPIRED"
+                          ]
+                        },
                         "localEngineState": {
                           "anyOf": [
                             {
@@ -28881,6 +30527,7 @@
                         "blockingConfiguration",
                         "requestedDurationMinutes",
                         "status",
+                        "remoteExecutionPhase",
                         "localEngineState",
                         "requestedAt",
                         "acceptedAt",
@@ -29193,6 +30840,20 @@
                             "CANCELLED"
                           ]
                         },
+                        "remoteExecutionPhase": {
+                          "type": "string",
+                          "enum": [
+                            "REQUESTED",
+                            "AUTHORIZED",
+                            "QUEUED",
+                            "DELIVERED",
+                            "EXECUTING",
+                            "ACTIVE",
+                            "COMPLETED",
+                            "FAILED",
+                            "EXPIRED"
+                          ]
+                        },
                         "localEngineState": {
                           "anyOf": [
                             {
@@ -29264,6 +30925,7 @@
                         "blockingConfiguration",
                         "requestedDurationMinutes",
                         "status",
+                        "remoteExecutionPhase",
                         "localEngineState",
                         "requestedAt",
                         "acceptedAt",
@@ -29855,6 +31517,20 @@
                               "CANCELLED"
                             ]
                           },
+                          "remoteExecutionPhase": {
+                            "type": "string",
+                            "enum": [
+                              "REQUESTED",
+                              "AUTHORIZED",
+                              "QUEUED",
+                              "DELIVERED",
+                              "EXECUTING",
+                              "ACTIVE",
+                              "COMPLETED",
+                              "FAILED",
+                              "EXPIRED"
+                            ]
+                          },
                           "localEngineState": {
                             "anyOf": [
                               {
@@ -29926,6 +31602,7 @@
                           "blockingConfiguration",
                           "requestedDurationMinutes",
                           "status",
+                          "remoteExecutionPhase",
                           "localEngineState",
                           "requestedAt",
                           "acceptedAt",
@@ -30171,6 +31848,20 @@
                               "CANCELLED"
                             ]
                           },
+                          "remoteExecutionPhase": {
+                            "type": "string",
+                            "enum": [
+                              "REQUESTED",
+                              "AUTHORIZED",
+                              "QUEUED",
+                              "DELIVERED",
+                              "EXECUTING",
+                              "ACTIVE",
+                              "COMPLETED",
+                              "FAILED",
+                              "EXPIRED"
+                            ]
+                          },
                           "localEngineState": {
                             "anyOf": [
                               {
@@ -30242,6 +31933,7 @@
                           "blockingConfiguration",
                           "requestedDurationMinutes",
                           "status",
+                          "remoteExecutionPhase",
                           "localEngineState",
                           "requestedAt",
                           "acceptedAt",
@@ -30251,6 +31943,455 @@
                           "completionReason",
                           "createdAt",
                           "updatedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/live-dashboard": {
+      "get": {
+        "summary": "Retrieve enriched live controller & owner session dashboard items",
+        "tags": [
+          "Sessions"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "session": {
+                            "type": "object",
+                            "properties": {
+                              "sessionId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "localSessionId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "ownerUserId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "targetDeviceId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "initiatedByUserId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "authorizationId": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "sessionType": {
+                                "type": "string",
+                                "enum": [
+                                  "SELF_ARREST",
+                                  "PARTNER_ARREST",
+                                  "MUTUAL_ARREST"
+                                ]
+                              },
+                              "goal": {
+                                "type": "string"
+                              },
+                              "blockingConfiguration": {
+                                "type": "object",
+                                "properties": {
+                                  "schemaVersion": {
+                                    "default": 1,
+                                    "type": "number",
+                                    "enum": [
+                                      1
+                                    ]
+                                  },
+                                  "ruleMode": {
+                                    "default": "BLOCK_SELECTED",
+                                    "type": "string",
+                                    "enum": [
+                                      "BLOCK_SELECTED",
+                                      "STRICT_ALLOWLIST",
+                                      "WHITELIST_ONLY"
+                                    ]
+                                  },
+                                  "allowedCategories": {
+                                    "default": [
+                                      "CALLS",
+                                      "STUDY_APPS"
+                                    ],
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "enum": [
+                                        "CALLS",
+                                        "STUDY_APPS"
+                                      ]
+                                    }
+                                  },
+                                  "overlayStatusBar": {
+                                    "default": false,
+                                    "type": "boolean"
+                                  },
+                                  "disableEmergencyExit": {
+                                    "default": false,
+                                    "type": "boolean"
+                                  },
+                                  "blockedPackages": {
+                                    "maxItems": 200,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 3,
+                                      "maxLength": 192
+                                    }
+                                  },
+                                  "allowedStudyPackages": {
+                                    "maxItems": 200,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 3,
+                                      "maxLength": 192
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "schemaVersion",
+                                  "ruleMode",
+                                  "allowedCategories",
+                                  "overlayStatusBar",
+                                  "disableEmergencyExit"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "requestedDurationMinutes": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "REQUESTED",
+                                  "DELIVERED",
+                                  "ACTIVE",
+                                  "PAUSED",
+                                  "INTERRUPTED",
+                                  "COMPLETED",
+                                  "RELEASED_EARLY",
+                                  "EMERGENCY_STOPPED",
+                                  "REJECTED",
+                                  "EXPIRED",
+                                  "CANCELLED"
+                                ]
+                              },
+                              "remoteExecutionPhase": {
+                                "type": "string",
+                                "enum": [
+                                  "REQUESTED",
+                                  "AUTHORIZED",
+                                  "QUEUED",
+                                  "DELIVERED",
+                                  "EXECUTING",
+                                  "ACTIVE",
+                                  "COMPLETED",
+                                  "FAILED",
+                                  "EXPIRED"
+                                ]
+                              },
+                              "localEngineState": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "IDLE",
+                                      "PREPARING",
+                                      "ACTIVE",
+                                      "PAUSED",
+                                      "COMPLETED",
+                                      "EMERGENCY_STOPPED",
+                                      "INTERRUPTED"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "requestedAt": {
+                                "type": "string"
+                              },
+                              "acceptedAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "startedAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "expectedEndAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "completedAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "completionReason": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              },
+                              "updatedAt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "sessionId",
+                              "localSessionId",
+                              "ownerUserId",
+                              "targetDeviceId",
+                              "initiatedByUserId",
+                              "authorizationId",
+                              "sessionType",
+                              "goal",
+                              "blockingConfiguration",
+                              "requestedDurationMinutes",
+                              "status",
+                              "remoteExecutionPhase",
+                              "localEngineState",
+                              "requestedAt",
+                              "acceptedAt",
+                              "startedAt",
+                              "expectedEndAt",
+                              "completedAt",
+                              "completionReason",
+                              "createdAt",
+                              "updatedAt"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "owner": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "username": {
+                                "type": "string"
+                              },
+                              "displayName": {
+                                "type": "string"
+                              },
+                              "avatarUrl": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "username",
+                              "displayName",
+                              "avatarUrl"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "initiator": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "username": {
+                                "type": "string"
+                              },
+                              "displayName": {
+                                "type": "string"
+                              },
+                              "avatarUrl": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "username",
+                              "displayName",
+                              "avatarUrl"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "targetDevice": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "deviceId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "deviceName": {
+                                    "type": "string"
+                                  },
+                                  "deviceModel": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "platform": {
+                                    "type": "string"
+                                  },
+                                  "deviceStatus": {
+                                    "type": "string"
+                                  },
+                                  "lastSeenAt": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "deviceId",
+                                  "deviceName",
+                                  "deviceModel",
+                                  "platform",
+                                  "deviceStatus",
+                                  "lastSeenAt"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "remainingSeconds": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "pendingReleaseRequestsCount": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "session",
+                          "owner",
+                          "initiator",
+                          "targetDevice",
+                          "remainingSeconds",
+                          "pendingReleaseRequestsCount"
                         ],
                         "additionalProperties": false
                       }
@@ -30479,6 +32620,20 @@
                             "CANCELLED"
                           ]
                         },
+                        "remoteExecutionPhase": {
+                          "type": "string",
+                          "enum": [
+                            "REQUESTED",
+                            "AUTHORIZED",
+                            "QUEUED",
+                            "DELIVERED",
+                            "EXECUTING",
+                            "ACTIVE",
+                            "COMPLETED",
+                            "FAILED",
+                            "EXPIRED"
+                          ]
+                        },
                         "localEngineState": {
                           "anyOf": [
                             {
@@ -30550,6 +32705,7 @@
                         "blockingConfiguration",
                         "requestedDurationMinutes",
                         "status",
+                        "remoteExecutionPhase",
                         "localEngineState",
                         "requestedAt",
                         "acceptedAt",
@@ -30876,6 +33032,20 @@
                             "CANCELLED"
                           ]
                         },
+                        "remoteExecutionPhase": {
+                          "type": "string",
+                          "enum": [
+                            "REQUESTED",
+                            "AUTHORIZED",
+                            "QUEUED",
+                            "DELIVERED",
+                            "EXECUTING",
+                            "ACTIVE",
+                            "COMPLETED",
+                            "FAILED",
+                            "EXPIRED"
+                          ]
+                        },
                         "localEngineState": {
                           "anyOf": [
                             {
@@ -30947,6 +33117,7 @@
                         "blockingConfiguration",
                         "requestedDurationMinutes",
                         "status",
+                        "remoteExecutionPhase",
                         "localEngineState",
                         "requestedAt",
                         "acceptedAt",
@@ -31457,6 +33628,20 @@
                             "CANCELLED"
                           ]
                         },
+                        "remoteExecutionPhase": {
+                          "type": "string",
+                          "enum": [
+                            "REQUESTED",
+                            "AUTHORIZED",
+                            "QUEUED",
+                            "DELIVERED",
+                            "EXECUTING",
+                            "ACTIVE",
+                            "COMPLETED",
+                            "FAILED",
+                            "EXPIRED"
+                          ]
+                        },
                         "localEngineState": {
                           "anyOf": [
                             {
@@ -31528,6 +33713,7 @@
                         "blockingConfiguration",
                         "requestedDurationMinutes",
                         "status",
+                        "remoteExecutionPhase",
                         "localEngineState",
                         "requestedAt",
                         "acceptedAt",

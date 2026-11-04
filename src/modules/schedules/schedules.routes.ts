@@ -6,7 +6,8 @@ import { ErrorResponseSchema, UuidParamSchema } from '../../shared/http-schemas'
 import {
   ListScheduledArrestsQuerySchema,
   PaginatedScheduledArrestsResponseSchema,
-  ScheduledArrestResponseSchema
+  ScheduledArrestResponseSchema,
+  TriggerScheduledArrestResponseSchema
 } from './schedules.schemas';
 import type { SchedulesService } from './schedules.service';
 
@@ -89,6 +90,35 @@ export function registerSchedulesRoutes(
         extractRequestContext(request)
       );
       return reply.status(200).send({ schedule });
+    }
+  );
+
+  router.post(
+    '/api/v1/scheduled-arrests/:id/trigger',
+    {
+      preHandler: [deps.authenticate],
+      schema: {
+        tags: ['Scheduled Arrests'],
+        summary: 'Materialize a due scheduled or recurring Arrest occurrence into an active session command after verifying authorization and time bounds',
+        security: [{ bearerAuth: [] }],
+        params: UuidParamSchema,
+        response: {
+          200: TriggerScheduledArrestResponseSchema,
+          201: TriggerScheduledArrestResponseSchema,
+          401: ErrorResponseSchema,
+          403: ErrorResponseSchema,
+          404: ErrorResponseSchema,
+          409: ErrorResponseSchema
+        }
+      }
+    },
+    async (request, reply) => {
+      const result = await deps.schedulesService.triggerDueSchedule(
+        request.authUser!.id,
+        request.params.id,
+        extractRequestContext(request)
+      );
+      return reply.status(result.idempotentReplay ? 200 : 201).send(result);
     }
   );
 }

@@ -16,6 +16,7 @@ import {
   type CloudSessionStatus,
   type CommandStatus,
   type CommandType,
+  type DeviceAppCatalogRecord,
   type DevicePushTokenRecord,
   type DeviceRecord,
   type DeviceStatus,
@@ -30,6 +31,7 @@ import {
   type ReleaseRequestStatus,
   type ScheduledArrestRecord,
   type ScheduledArrestStatus,
+  type SelectableAppCatalogItem,
   type SessionCommandRecord,
   type SessionSyncEventRecord,
   type SessionType,
@@ -40,6 +42,7 @@ import type {
   AuditLogsRepository,
   CommandsRepository,
   DataStore,
+  DeviceAppCatalogsRepository,
   DevicesRepository,
   PartnerPermissionsRepository,
   PartnershipsRepository,
@@ -57,6 +60,7 @@ interface MemoryState {
   users: UserRecord[];
   refreshTokens: RefreshTokenRecord[];
   devices: DeviceRecord[];
+  deviceAppCatalogs: DeviceAppCatalogRecord[];
   pushTokens: DevicePushTokenRecord[];
   partnerships: PartnershipRecord[];
   partnerPermissions: PartnerPermissionRecord[];
@@ -87,6 +91,7 @@ export class InMemoryDataStore implements DataStore {
     users: [],
     refreshTokens: [],
     devices: [],
+    deviceAppCatalogs: [],
     pushTokens: [],
     partnerships: [],
     partnerPermissions: [],
@@ -958,6 +963,8 @@ export class InMemoryDataStore implements DataStore {
           status?: ScheduledArrestStatus;
           occurrencesCompleted?: number;
           nextOccurrenceAt?: Date | null;
+          lastMaterializedSessionId?: string | null;
+          lastMaterializedAt?: Date | null;
           updatedAt: Date;
         }
       ) => {
@@ -970,8 +977,27 @@ export class InMemoryDataStore implements DataStore {
           target.occurrencesCompleted = updates.occurrencesCompleted;
         if (updates.nextOccurrenceAt !== undefined)
           target.nextOccurrenceAt = cloneDeep(updates.nextOccurrenceAt);
+        if (updates.lastMaterializedSessionId !== undefined)
+          target.lastMaterializedSessionId = updates.lastMaterializedSessionId;
+        if (updates.lastMaterializedAt !== undefined)
+          target.lastMaterializedAt = cloneDeep(updates.lastMaterializedAt);
         target.updatedAt = cloneDeep(updates.updatedAt);
         return cloneDeep(target);
+      },
+      listDueForDevice: async (deviceId, now) => {
+        const nowMs = now.getTime();
+        const due = this.state.scheduledArrests
+          .filter(
+            (s) =>
+              s.targetDeviceId === deviceId &&
+              s.status === 'SCHEDULED' &&
+              s.nextOccurrenceAt !== null &&
+              s.nextOccurrenceAt.getTime() <= nowMs
+          )
+          .sort(
+            (a, b) => (a.nextOccurrenceAt?.getTime() ?? 0) - (b.nextOccurrenceAt?.getTime() ?? 0)
+          );
+        return cloneDeep(due);
       },
       revokeByPermissionId: async (permissionId, now) => {
         let count = 0;
@@ -1497,10 +1523,42 @@ export class InMemoryDataStore implements DataStore {
       }
     };
 
+    const deviceAppCatalogs: DeviceAppCatalogsRepository = {
+      findByDeviceId: async (deviceId) => {
+        const found = this.state.deviceAppCatalogs.find((c) => c.deviceId === deviceId);
+        return found ? cloneDeep(found) : null;
+      },
+      upsert: async (params: {
+        deviceId: string;
+        ownerUserId: string;
+        apps: SelectableAppCatalogItem[];
+        now: Date;
+      }) => {
+        const existing = this.state.deviceAppCatalogs.find(
+          (c) => c.deviceId === params.deviceId
+        );
+        if (existing) {
+          existing.ownerUserId = params.ownerUserId;
+          existing.apps = cloneDeep(params.apps);
+          existing.updatedAt = cloneDeep(params.now);
+          return cloneDeep(existing);
+        }
+        const created: DeviceAppCatalogRecord = {
+          deviceId: params.deviceId,
+          ownerUserId: params.ownerUserId,
+          apps: cloneDeep(params.apps),
+          updatedAt: cloneDeep(params.now)
+        };
+        this.state.deviceAppCatalogs.push(created);
+        return cloneDeep(created);
+      }
+    };
+
     return {
       users,
       refreshTokens,
       devices,
+      deviceAppCatalogs,
       pushTokens,
       partnerships,
       partnerPermissions,

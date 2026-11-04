@@ -65,6 +65,8 @@ export const ScheduledArrestResponseSchema = z.object({
   occurrencesCompleted: z.number().int(),
   maxOccurrences: z.number().int(),
   nextOccurrenceAt: z.string().nullable(),
+  lastMaterializedSessionId: z.string().uuid().nullable().optional(),
+  lastMaterializedAt: z.string().nullable().optional(),
   status: ScheduledArrestStatusSchema,
   createdAt: z.string(),
   updatedAt: z.string()
@@ -75,4 +77,11 @@ export const PaginatedScheduledArrestsResponseSchema = z.object({
   total: z.number().int(),
   limit: z.number().int(),
   offset: z.number().int()
+});
+
+export const TriggerScheduledArrestResponseSchema = z.object({
+  schedule: ScheduledArrestResponseSchema,
+  sessionId: z.string().uuid(),
+  commandId: z.string().uuid(),
+  idempotentReplay: z.boolean()
 });

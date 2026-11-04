@@ -12,6 +12,7 @@ import type {
   CloudSessionStatus,
   CommandStatus,
   CommandType,
+  DeviceAppCatalogRecord,
   DevicePushTokenRecord,
   DeviceRecord,
   DeviceStatus,
@@ -27,6 +28,7 @@ import type {
   ReleaseRequestStatus,
   ScheduledArrestRecord,
   ScheduledArrestStatus,
+  SelectableAppCatalogItem,
   SessionCommandRecord,
   SessionSyncEventRecord,
   SessionType,
@@ -411,17 +413,31 @@ export interface ScheduledArrestsRepository {
       status?: ScheduledArrestStatus;
       occurrencesCompleted?: number;
       nextOccurrenceAt?: Date | null;
+      lastMaterializedSessionId?: string | null;
+      lastMaterializedAt?: Date | null;
       updatedAt: Date;
     }
   ): Promise<ScheduledArrestRecord>;
+  listDueForDevice(deviceId: string, now: Date): Promise<ScheduledArrestRecord[]>;
   revokeByPermissionId(permissionId: string, now: Date): Promise<number>;
   revokeBetweenUsers(userA: string, userB: string, now: Date): Promise<number>;
+}
+
+export interface DeviceAppCatalogsRepository {
+  findByDeviceId(deviceId: string): Promise<DeviceAppCatalogRecord | null>;
+  upsert(params: {
+    deviceId: string;
+    ownerUserId: string;
+    apps: SelectableAppCatalogItem[];
+    now: Date;
+  }): Promise<DeviceAppCatalogRecord>;
 }
 
 export interface RepositoryBundle {
   users: UsersRepository;
   refreshTokens: RefreshTokensRepository;
   devices: DevicesRepository;
+  deviceAppCatalogs: DeviceAppCatalogsRepository;
   pushTokens: PushTokensRepository;
   partnerships: PartnershipsRepository;
   partnerPermissions: PartnerPermissionsRepository;

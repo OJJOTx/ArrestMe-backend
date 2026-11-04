@@ -29,6 +29,18 @@ export const CloudSessionStatusSchema = z.enum([
   'CANCELLED'
 ]);
 
+export const RemoteExecutionPhaseSchema = z.enum([
+  'REQUESTED',
+  'AUTHORIZED',
+  'QUEUED',
+  'DELIVERED',
+  'EXECUTING',
+  'ACTIVE',
+  'COMPLETED',
+  'FAILED',
+  'EXPIRED'
+]);
+
 export const PackageNameSchema = z
   .string()
   .trim()
@@ -124,6 +136,7 @@ export const ArrestSessionResponseSchema = z.object({
   blockingConfiguration: BlockingConfigurationInputSchema,
   requestedDurationMinutes: z.number().int(),
   status: CloudSessionStatusSchema,
+  remoteExecutionPhase: RemoteExecutionPhaseSchema,
   localEngineState: AndroidEngineStateSchema.nullable(),
   requestedAt: z.string(),
   acceptedAt: z.string().nullable(),
@@ -133,6 +146,35 @@ export const ArrestSessionResponseSchema = z.object({
   completionReason: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string()
+});
+
+export const LiveSessionDashboardUserSchema = z.object({
+  id: z.string().uuid(),
+  username: z.string(),
+  displayName: z.string(),
+  avatarUrl: z.string().nullable()
+});
+
+export const LiveSessionDashboardDeviceSchema = z.object({
+  deviceId: z.string().uuid(),
+  deviceName: z.string(),
+  deviceModel: z.string().nullable(),
+  platform: z.string(),
+  deviceStatus: z.string(),
+  lastSeenAt: z.string().nullable()
+});
+
+export const LiveSessionDashboardItemSchema = z.object({
+  session: ArrestSessionResponseSchema,
+  owner: LiveSessionDashboardUserSchema,
+  initiator: LiveSessionDashboardUserSchema,
+  targetDevice: LiveSessionDashboardDeviceSchema.nullable(),
+  remainingSeconds: z.number().int().nullable(),
+  pendingReleaseRequestsCount: z.number().int()
+});
+
+export const LiveSessionDashboardResponseSchema = z.object({
+  items: z.array(LiveSessionDashboardItemSchema)
 });
 
 export const CreateSessionResponseSchema = z.object({

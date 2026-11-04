@@ -62,3 +62,27 @@ export const PaginatedDevicesResponseSchema = z.object({
   limit: z.number().int(),
   offset: z.number().int()
 });
+
+export const SelectableAppCatalogItemSchema = z.object({
+  packageName: z
+    .string()
+    .trim()
+    .min(3)
+    .max(150)
+    .regex(/^[a-zA-Z0-9_.]+$/, 'Invalid Android package name'),
+  appLabel: z.string().trim().min(1).max(120),
+  category: z.string().trim().min(1).max(60).default('USER_APP'),
+  isStudyCandidate: z.boolean().default(false)
+});
+
+export const UpsertDeviceAppCatalogBodySchema = z.object({
+  apps: z.array(SelectableAppCatalogItemSchema).max(300)
+});
+
+export const DeviceAppCatalogResponseSchema = z.object({
+  deviceId: z.string().uuid(),
+  ownerUserId: z.string().uuid(),
+  apps: z.array(SelectableAppCatalogItemSchema),
+  filteredOutSystemCount: z.number().int().default(0),
+  updatedAt: z.string().nullable()
+});

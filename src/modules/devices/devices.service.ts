@@ -3,8 +3,35 @@ import type { AuditService, RequestContextMeta } from '../../services/audit.serv
 import { sha256Hex } from '../../shared/crypto';
 import { Errors } from '../../shared/errors';
 import type { Clock } from '../../shared/time';
-import type { DeviceRecord, PaginatedResult } from '../../types/domain';
+import type {
+  DeviceRecord,
+  PaginatedResult,
+  SelectableAppCatalogItem
+} from '../../types/domain';
 import type { DataStore } from '../../types/repositories';
+
+const PROTECTED_SYSTEM_PACKAGE_PREFIXES = [
+  'com.android.systemui',
+  'com.android.settings',
+  'com.android.phone',
+  'com.android.server.telecom',
+  'com.android.incallui',
+  'com.android.dialer',
+  'com.google.android.dialer',
+  'com.android.emergency',
+  'com.android.permissioncontroller',
+  'com.google.android.permissioncontroller',
+  'com.android.packageinstaller',
+  'com.arrestme.benchmark'
+] as const;
+
+function isProtectedSystemPackage(packageName: string): boolean {
+  const lower = packageName.trim().toLowerCase();
+  if (lower === 'android') return true;
+  return PROTECTED_SYSTEM_PACKAGE_PREFIXES.some(
+    (prefix) => lower === prefix || lower.startsWith(`${prefix}.`)
+  );
+}
 
 export interface SerializedDevice {
   id: string;
@@ -328,5 +355,122 @@ export class DevicesService {
         updatedAt: now.toISOString()
       };
     });
+  }
+
+  async upsertDeviceAppCatalog(
+    userId: string,
+    deviceId: string,
+    apps: SelectableAppCatalogItem[],
+    context?: RequestContextMeta
+  ): Promise<{
+    deviceId: string;
+    ownerUserId: string;
+    apps: SelectableAppCatalogItem[];
+    filteredOutSystemCount: number;
+    updatedAt: string;
+  }> {
+    return this.store.withTransaction(async (repos) => {
+      const device = await repos.devices.findByIdForUpdate(deviceId);
+      if (!device || device.userId !== userId) {
+        throw Errors.notFound('DEVICE_NOT_FOUND', 'Device was not found.');
+      }
+      if (device.deviceStatus === 'REVOKED') {
+        throw Errors.conflict(
+          'DEVICE_REVOKED',
+          'Cannot update selectable app catalog for a revoked device.'
+        );
+      }
+
+      const seen = new Set<string>();
+      const sanitized: SelectableAppCatalogItem[] = [];
+      let filteredOutSystemCount = 0;
+
+      for (const item of apps) {
+        const pkg = item.packageName.trim();
+        if (isProtectedSystemPackage(pkg)) {
+          filteredOutSystemCount++;
+          continue;
+        }
+        if (seen.has(pkg)) continue;
+        seen.add(pkg);
+        sanitized.push({
+          packageName: pkg,
+          appLabel: item.appLabel.trim(),
+          category: item.category.trim() || 'USER_APP',
+          isStudyCandidate: Boolean(item.isStudyCandidate)
+        });
+      }
+
+      sanitized.sort((a, b) => a.appLabel.localeCompare(b.appLabel));
+
+      const now = this.clock.now();
+      const saved = await repos.deviceAppCatalogs.upsert({
+        deviceId,
+        ownerUserId: userId,
+        apps: sanitized,
+        now
+      });
+      await repos.devices.touchLastSeen(deviceId, now);
+
+      await this.auditService.record(repos.auditLogs, {
+        actorUserId: userId,
+        actorDeviceId: deviceId,
+        action: 'DEVICE_APP_CATALOG_UPDATED',
+        resourceType: 'DEVICE',
+        resourceId: deviceId,
+        result: 'SUCCESS',
+        context,
+        metadata: {
+          selectableAppsCount: sanitized.length,
+          filteredOutSystemCount
+        }
+      });
+
+      return {
+        deviceId: saved.deviceId,
+        ownerUserId: saved.ownerUserId,
+        apps: saved.apps,
+        filteredOutSystemCount,
+        updatedAt: saved.updatedAt.toISOString()
+      };
+    });
+  }
+
+  async getDeviceAppCatalog(
+    requesterUserId: string,
+    deviceId: string
+  ): Promise<{
+    deviceId: string;
+    ownerUserId: string;
+    apps: SelectableAppCatalogItem[];
+    filteredOutSystemCount: number;
+    updatedAt: string | null;
+  }> {
+    const device = await this.store.repositories.devices.findById(deviceId);
+    if (!device || device.deviceStatus === 'REVOKED') {
+      throw Errors.notFound('DEVICE_NOT_FOUND', 'Target device was not found.');
+    }
+
+    if (device.userId !== requesterUserId) {
+      const partnership = await this.store.repositories.partnerships.findByPair(
+        device.userId,
+        requesterUserId
+      );
+      if (!partnership || partnership.state !== 'ACCEPTED') {
+        throw Errors.forbidden(
+          'PARTNERSHIP_REQUIRED',
+          'Only the device owner or an accepted partner can view the selectable app catalog for this device.'
+        );
+      }
+    }
+
+    const catalog = await this.store.repositories.deviceAppCatalogs.findByDeviceId(deviceId);
+    return {
+      deviceId: device.id,
+      ownerUserId: device.userId,
+      apps: catalog?.apps ?? [],
+      filteredOutSystemCount: 0,
+      updatedAt: catalog ? catalog.updatedAt.toISOString() : null
+    };
   }
 }

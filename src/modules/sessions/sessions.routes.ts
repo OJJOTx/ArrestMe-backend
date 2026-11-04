@@ -10,6 +10,7 @@ import {
   CreateSessionBodySchema,
   CreateSessionResponseSchema,
   ListSessionsQuerySchema,
+  LiveSessionDashboardResponseSchema,
   PaginatedSessionsResponseSchema,
   PostSessionEventsBodySchema,
   RemoteSessionCommandBodySchema
@@ -106,6 +107,26 @@ export function registerSessionsRoutes(
     },
     async (request, reply) => {
       const items = await deps.sessionsService.listActiveSessions(request.authUser!.id);
+      return reply.status(200).send({ items });
+    }
+  );
+
+  router.get(
+    '/api/v1/sessions/live-dashboard',
+    {
+      preHandler: [deps.authenticate],
+      schema: {
+        tags: ['Sessions'],
+        summary: 'Retrieve enriched live controller & owner session dashboard items',
+        security: [{ bearerAuth: [] }],
+        response: {
+          200: LiveSessionDashboardResponseSchema,
+          401: ErrorResponseSchema
+        }
+      }
+    },
+    async (request, reply) => {
+      const items = await deps.sessionsService.listLiveDashboardSessions(request.authUser!.id);
       return reply.status(200).send({ items });
     }
   );

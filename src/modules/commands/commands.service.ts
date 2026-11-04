@@ -1,4 +1,5 @@
 import type { AuditService, RequestContextMeta } from '../../services/audit.service';
+import type { SchedulesService } from '../schedules/schedules.service';
 import { Errors } from '../../shared/errors';
 import type { Clock } from '../../shared/time';
 import {
@@ -61,7 +62,8 @@ export class CommandsService {
   constructor(
     private readonly store: DataStore,
     private readonly auditService: AuditService,
-    private readonly clock: Clock
+    private readonly clock: Clock,
+    private readonly schedulesService?: SchedulesService
   ) {}
 
   async pollDeviceCommands(
@@ -90,6 +92,10 @@ export class CommandsService {
       await repos.devices.touchLastSeen(deviceId, now);
       await repos.commands.expireOverdueForDevice(deviceId, now);
 
+      if (this.schedulesService) {
+        await this.schedulesService.materializeDueSchedulesForDeviceInTx(repos, deviceId, now);
+      }
+
       const statuses: CommandStatus[] = options.includeAcknowledged
         ? ['PENDING', 'DELIVERED', 'ACKNOWLEDGED']
         : ['PENDING', 'DELIVERED'];
@@ -101,12 +107,22 @@ export class CommandsService {
         now
       });
 
-      const newlyPendingIds = commands
-        .filter((c) => c.status === 'PENDING')
-        .map((c) => c.commandId);
+      const newlyPending = commands.filter((c) => c.status === 'PENDING');
+      const newlyPendingIds = newlyPending.map((c) => c.commandId);
 
       if (newlyPendingIds.length > 0) {
         await repos.commands.markDeliveredBatch(newlyPendingIds, now);
+        for (const cmd of newlyPending) {
+          if (cmd.commandType === 'START_ARREST') {
+            const sess = await repos.sessions.findByIdForUpdate(cmd.sessionId);
+            if (sess && sess.status === 'REQUESTED') {
+              await repos.sessions.updateStatusAndFields(sess.sessionId, {
+                status: 'DELIVERED',
+                updatedAt: now
+              });
+            }
+          }
+        }
       }
 
       const updatedItems = commands.map((c) =>
