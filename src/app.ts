@@ -29,8 +29,12 @@ import { registerPartnersRoutes } from './modules/partners/partners.routes';
 import { PartnersService } from './modules/partners/partners.service';
 import { registerPermissionsRoutes } from './modules/permissions/permissions.routes';
 import { PermissionsService } from './modules/permissions/permissions.service';
+import { registerProposalsRoutes } from './modules/proposals/proposals.routes';
+import { ProposalsService } from './modules/proposals/proposals.service';
 import { registerReleasesRoutes } from './modules/releases/releases.routes';
 import { ReleasesService } from './modules/releases/releases.service';
+import { registerSchedulesRoutes } from './modules/schedules/schedules.routes';
+import { SchedulesService } from './modules/schedules/schedules.service';
 import { registerSessionsRoutes } from './modules/sessions/sessions.routes';
 import { SessionsService } from './modules/sessions/sessions.service';
 import { registerUsersRoutes } from './modules/users/users.routes';
@@ -112,7 +116,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
       }
       cb(null, false);
     },
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Request-Id']
   });
 
@@ -281,12 +285,31 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   );
   const usersService = new UsersService(store, auditService, clock);
   const devicesService = new DevicesService(store, auditService, clock);
-  const partnersService = new PartnersService(store, notificationService, auditService, clock);
   const permissionsService = new PermissionsService(
     store,
     auditService,
     clock,
     env.MAX_SESSION_DURATION_MINUTES
+  );
+  const schedulesService = new SchedulesService(store, auditService, clock);
+  const proposalsService = new ProposalsService(
+    store,
+    permissionsService,
+    schedulesService,
+    notificationService,
+    auditService,
+    clock,
+    env.DEFAULT_COMMAND_TTL_SECONDS,
+    env.MAX_SESSION_DURATION_MINUTES
+  );
+  const partnersService = new PartnersService(
+    store,
+    notificationService,
+    auditService,
+    clock,
+    permissionsService,
+    proposalsService,
+    schedulesService
   );
   const commandsService = new CommandsService(store, auditService, clock);
   const sessionsService = new SessionsService(
@@ -327,6 +350,8 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   registerDevicesRoutes(app, { devicesService, authenticate });
   registerPartnersRoutes(app, { partnersService, authenticate });
   registerPermissionsRoutes(app, { permissionsService, authenticate });
+  registerProposalsRoutes(app, { proposalsService, authenticate });
+  registerSchedulesRoutes(app, { schedulesService, authenticate });
   registerSessionsRoutes(app, { sessionsService, authenticate });
   registerCommandsRoutes(app, { commandsService, authenticate });
   registerReleasesRoutes(app, { releasesService, authenticate });

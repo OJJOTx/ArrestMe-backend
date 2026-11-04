@@ -3,7 +3,7 @@ import { Errors } from '../../shared/errors';
 import type { Clock } from '../../shared/time';
 import type { AuthenticatedUserProfile, PublicUserProfile, UserRecord } from '../../types/domain';
 import type { DataStore } from '../../types/repositories';
-import { serializeAuthenticatedUser } from '../auth/auth.service';
+import { generateInviteCode, serializeAuthenticatedUser } from '../auth/auth.service';
 
 export function serializePublicUser(user: UserRecord): PublicUserProfile {
   return {
@@ -58,6 +58,47 @@ export class UsersService {
       });
 
       return serializeAuthenticatedUser(updated);
+    });
+  }
+
+  async getOrEnsureInviteCode(userId: string): Promise<{ inviteCode: string }> {
+    const user = await this.store.repositories.users.findById(userId);
+    if (!user || user.accountStatus === 'DELETED') {
+      throw Errors.notFound('NOT_FOUND', 'User profile was not found.');
+    }
+    if (user.inviteCode) {
+      return { inviteCode: user.inviteCode };
+    }
+    return this.regenerateInviteCode(userId);
+  }
+
+  async regenerateInviteCode(
+    userId: string,
+    context?: RequestContextMeta
+  ): Promise<{ inviteCode: string }> {
+    return this.store.withTransaction(async (repos) => {
+      const user = await repos.users.findById(userId);
+      if (!user || user.accountStatus === 'DELETED') {
+        throw Errors.notFound('NOT_FOUND', 'User profile was not found.');
+      }
+
+      const now = this.clock.now();
+      const newCode = generateInviteCode();
+      const updated = await repos.users.updateInviteCode(userId, newCode, now);
+      if (!updated) {
+        throw Errors.notFound('NOT_FOUND', 'User profile was not found.');
+      }
+
+      await this.auditService.record(repos.auditLogs, {
+        actorUserId: userId,
+        action: 'USER_INVITE_CODE_REGENERATED',
+        resourceType: 'USER',
+        resourceId: userId,
+        result: 'SUCCESS',
+        context
+      });
+
+      return { inviteCode: updated.inviteCode! };
     });
   }
 }

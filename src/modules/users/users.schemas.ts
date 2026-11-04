@@ -13,3 +13,7 @@ export const UpdateProfileBodySchema = z
 export const CurrentUserResponseSchema = z.object({
   user: AuthenticatedUserResponseSchema
 });
+
+export const InviteCodeResponseSchema = z.object({
+  inviteCode: z.string()
+});

@@ -127,7 +127,15 @@ export class NotificationService {
    */
   async notifyUserEvent(
     userId: string,
-    eventType: 'PARTNERSHIP_INVITATION' | 'PARTNERSHIP_ACCEPTED' | 'RELEASE_REQUESTED',
+    eventType:
+      | 'PARTNERSHIP_INVITATION'
+      | 'PARTNERSHIP_ACCEPTED'
+      | 'RELEASE_REQUESTED'
+      | 'PROPOSAL_CREATED'
+      | 'PROPOSAL_COUNTEROFFERED'
+      | 'PROPOSAL_ACCEPTED'
+      | 'PROPOSAL_REJECTED'
+      | 'SCHEDULE_CREATED',
     resourceId: string
   ): Promise<void> {
     if (!this.fcm.isEnabled) return;

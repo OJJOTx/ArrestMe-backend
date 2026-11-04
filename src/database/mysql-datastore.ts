@@ -4,13 +4,18 @@ import { Errors } from '../shared/errors';
 import {
   fromMysqlDateTime,
   toMysqlDateTime,
-  type AllowedTimeWindowsConfig
+  type AllowedTimeWindowsConfig,
+  type RecurrenceRuleConfig
 } from '../shared/time';
 import {
   NON_TERMINAL_CLOUD_SESSION_STATUSES,
   TERMINAL_CLOUD_SESSION_STATUSES,
   type AccountStatus,
   type AndroidEngineState,
+  type ArrestProposalRecord,
+  type ArrestProposalRevisionRecord,
+  type ArrestProposalStatus,
+  type ArrestRequestType,
   type ArrestSessionRecord,
   type AuditLogRecord,
   type AuditResult,
@@ -23,7 +28,10 @@ import {
   type DevicePushTokenRecord,
   type DeviceRecord,
   type DeviceStatus,
+  type ExactApprovedSessionConfig,
+  type NormalizedProposalConfigurationV1,
   type PaginatedResult,
+  type PartnerApprovalPolicyRecord,
   type PartnerPermissionRecord,
   type PartnershipRecord,
   type PartnershipState,
@@ -32,22 +40,27 @@ import {
   type RefreshTokenRecord,
   type ReleaseRequestRecord,
   type ReleaseRequestStatus,
+  type ScheduledArrestRecord,
+  type ScheduledArrestStatus,
   type SessionCommandRecord,
   type SessionSyncEventRecord,
   type SessionType,
   type UserRecord
 } from '../types/domain';
 import type {
+  ApprovalPoliciesRepository,
   AuditLogsRepository,
   CommandsRepository,
   DataStore,
   DevicesRepository,
   PartnerPermissionsRepository,
   PartnershipsRepository,
+  ProposalsRepository,
   PushTokensRepository,
   RefreshTokensRepository,
   ReleaseRequestsRepository,
   RepositoryBundle,
+  ScheduledArrestsRepository,
   SessionsRepository,
   UsersRepository
 } from '../types/repositories';
@@ -81,6 +94,8 @@ function mapUserRow(row: RowDataPacket): UserRecord {
     passwordHash: String(row.password_hash),
     displayName: String(row.display_name),
     avatarUrl: row.avatar_url !== null ? String(row.avatar_url) : null,
+    inviteCode:
+      row.invite_code !== undefined && row.invite_code !== null ? String(row.invite_code) : null,
     accountStatus: row.account_status as AccountStatus,
     createdAt: fromMysqlDateTime(row.created_at)!,
     updatedAt: fromMysqlDateTime(row.updated_at)!,
@@ -160,6 +175,16 @@ function mapPermissionRow(row: RowDataPacket): PartnerPermissionRecord {
     ownerUserId: String(row.owner_user_id),
     partnerUserId: String(row.partner_user_id),
     targetDeviceId: String(row.target_device_id),
+    proposalId:
+      row.proposal_id !== undefined && row.proposal_id !== null ? String(row.proposal_id) : null,
+    approvedRevision:
+      row.approved_revision !== undefined && row.approved_revision !== null
+        ? Number(row.approved_revision)
+        : null,
+    exactBlockingConfiguration:
+      row.exact_blocking_configuration !== undefined && row.exact_blocking_configuration !== null
+        ? parseJsonColumn<ExactApprovedSessionConfig>(row.exact_blocking_configuration)
+        : null,
     maximumSessionDuration: Number(row.maximum_session_duration),
     allowedTimeWindows:
       row.allowed_time_windows !== null
@@ -259,8 +284,8 @@ class MysqlUsersRepository implements UsersRepository {
     try {
       await this.db.execute(
         `INSERT INTO users
-          (id, username, email, password_hash, display_name, avatar_url, account_status, created_at, updated_at, last_login_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, username, email, password_hash, display_name, avatar_url, invite_code, account_status, created_at, updated_at, last_login_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           user.id,
           user.username,
@@ -268,6 +293,7 @@ class MysqlUsersRepository implements UsersRepository {
           user.passwordHash,
           user.displayName,
           user.avatarUrl,
+          user.inviteCode ?? null,
           user.accountStatus,
           toMysqlDateTime(user.createdAt),
           toMysqlDateTime(user.updatedAt),
@@ -327,6 +353,36 @@ class MysqlUsersRepository implements UsersRepository {
       [normalizedUsername]
     );
     return rows[0] ? mapUserRow(rows[0]) : null;
+  }
+
+  async findByInviteCode(inviteCode: string): Promise<UserRecord | null> {
+    const normalized = inviteCode.trim().toUpperCase();
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM users WHERE invite_code = ? LIMIT 1',
+      [normalized]
+    );
+    return rows[0] ? mapUserRow(rows[0]) : null;
+  }
+
+  async updateInviteCode(
+    userId: string,
+    inviteCode: string,
+    updatedAt: Date
+  ): Promise<UserRecord | null> {
+    const normalized = inviteCode.trim().toUpperCase();
+    try {
+      await this.db.execute('UPDATE users SET invite_code = ?, updated_at = ? WHERE id = ?', [
+        normalized,
+        toMysqlDateTime(updatedAt),
+        userId
+      ]);
+      return this.findById(userId);
+    } catch (err) {
+      if (isMysqlDuplicateError(err) && err.message.includes('uq_users_invite_code')) {
+        throw Errors.conflict('BAD_REQUEST', 'Invite code is already in use.');
+      }
+      throw err;
+    }
   }
 
   async updateProfile(
@@ -894,15 +950,21 @@ class MysqlPartnerPermissionsRepository implements PartnerPermissionsRepository 
   async create(record: PartnerPermissionRecord): Promise<PartnerPermissionRecord> {
     await this.db.execute(
       `INSERT INTO partner_permissions
-        (permission_id, owner_user_id, partner_user_id, target_device_id, maximum_session_duration,
-         allowed_time_windows, allowed_session_types, blocking_config_limits, one_time_only, used_count,
-         version, valid_from, expires_at, revoked_at, revoked_by_user_id, revoke_reason, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (permission_id, owner_user_id, partner_user_id, target_device_id, proposal_id, approved_revision,
+         exact_blocking_configuration, maximum_session_duration, allowed_time_windows, allowed_session_types,
+         blocking_config_limits, one_time_only, used_count, version, valid_from, expires_at, revoked_at,
+         revoked_by_user_id, revoke_reason, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         record.permissionId,
         record.ownerUserId,
         record.partnerUserId,
         record.targetDeviceId,
+        record.proposalId ?? null,
+        record.approvedRevision ?? null,
+        record.exactBlockingConfiguration
+          ? JSON.stringify(record.exactBlockingConfiguration)
+          : null,
         record.maximumSessionDuration,
         record.allowedTimeWindows ? JSON.stringify(record.allowedTimeWindows) : null,
         JSON.stringify(record.allowedSessionTypes),
@@ -1063,6 +1125,12 @@ class MysqlPartnerPermissionsRepository implements PartnerPermissionsRepository 
        WHERE permission_id = ? AND revoked_at IS NULL`,
       [ts, params.revokedByUserId, params.revokeReason, ts, permissionId]
     );
+    await this.db.execute(
+      `UPDATE scheduled_arrests
+       SET status = 'REVOKED', updated_at = ?
+       WHERE permission_id = ? AND status = 'SCHEDULED'`,
+      [ts, permissionId]
+    );
     return this.findById(permissionId);
   }
 
@@ -1088,6 +1156,20 @@ class MysqlPartnerPermissionsRepository implements PartnerPermissionsRepository 
         userA
       ]
     );
+    await this.db.execute(
+      `UPDATE scheduled_arrests
+       SET status = 'REVOKED', updated_at = ?
+       WHERE status = 'SCHEDULED'
+         AND ((owner_user_id = ? AND partner_user_id = ?) OR (owner_user_id = ? AND partner_user_id = ?))`,
+      [ts, userA, userB, userB, userA]
+    );
+    await this.db.execute(
+      `UPDATE arrest_proposals
+       SET status = 'CANCELLED', responded_at = ?, updated_at = ?
+       WHERE status IN ('PENDING', 'COUNTEROFFERED', 'DRAFT')
+         AND ((owner_user_id = ? AND partner_user_id = ?) OR (owner_user_id = ? AND partner_user_id = ?))`,
+      [ts, ts, userA, userB, userB, userA]
+    );
     return res.affectedRows;
   }
 
@@ -1101,6 +1183,638 @@ class MysqlPartnerPermissionsRepository implements PartnerPermissionsRepository 
        SET revoked_at = ?, revoked_by_user_id = ?, revoke_reason = ?, updated_at = ?
        WHERE target_device_id = ? AND revoked_at IS NULL`,
       [ts, params.revokedByUserId, params.revokeReason, ts, deviceId]
+    );
+    await this.db.execute(
+      `UPDATE scheduled_arrests
+       SET status = 'REVOKED', updated_at = ?
+       WHERE target_device_id = ? AND status = 'SCHEDULED'`,
+      [ts, deviceId]
+    );
+    return res.affectedRows;
+  }
+}
+
+function mapApprovalPolicyRow(row: RowDataPacket): PartnerApprovalPolicyRecord {
+  return {
+    id: String(row.id),
+    ownerUserId: String(row.owner_user_id),
+    partnerUserId: String(row.partner_user_id),
+    requireApprovalBeforeArrest: Boolean(row.require_approval_before_arrest),
+    explicitlyConfigured: Boolean(row.explicitly_configured),
+    notes: row.notes !== null ? String(row.notes) : null,
+    createdAt: fromMysqlDateTime(row.created_at)!,
+    updatedAt: fromMysqlDateTime(row.updated_at)!
+  };
+}
+
+function mapProposalRow(row: RowDataPacket): ArrestProposalRecord {
+  return {
+    proposalId: String(row.proposal_id),
+    partnershipId: String(row.partnership_id),
+    ownerUserId: String(row.owner_user_id),
+    partnerUserId: String(row.partner_user_id),
+    targetDeviceId: String(row.target_device_id),
+    proposerUserId: String(row.proposer_user_id),
+    recipientUserId: String(row.recipient_user_id),
+    requestType: row.request_type as ArrestRequestType,
+    currentRevision: Number(row.current_revision),
+    status: row.status as ArrestProposalStatus,
+    normalizedConfiguration: parseJsonColumn<NormalizedProposalConfigurationV1>(
+      row.normalized_configuration
+    ),
+    reason: row.reason !== null ? String(row.reason) : null,
+    approvedRevision: row.approved_revision !== null ? Number(row.approved_revision) : null,
+    resultingPermissionId:
+      row.resulting_permission_id !== null ? String(row.resulting_permission_id) : null,
+    resultingSessionId:
+      row.resulting_session_id !== null ? String(row.resulting_session_id) : null,
+    resultingScheduleId:
+      row.resulting_schedule_id !== null ? String(row.resulting_schedule_id) : null,
+    idempotencyKey: row.idempotency_key !== null ? String(row.idempotency_key) : null,
+    expiresAt: fromMysqlDateTime(row.expires_at)!,
+    respondedAt: fromMysqlDateTime(row.responded_at),
+    createdAt: fromMysqlDateTime(row.created_at)!,
+    updatedAt: fromMysqlDateTime(row.updated_at)!
+  };
+}
+
+function mapProposalRevisionRow(row: RowDataPacket): ArrestProposalRevisionRecord {
+  return {
+    id: String(row.id),
+    proposalId: String(row.proposal_id),
+    revisionNumber: Number(row.revision_number),
+    proposerUserId: String(row.proposer_user_id),
+    recipientUserId: String(row.recipient_user_id),
+    normalizedConfiguration: parseJsonColumn<NormalizedProposalConfigurationV1>(
+      row.normalized_configuration
+    ),
+    reason: row.reason !== null ? String(row.reason) : null,
+    status: row.status as ArrestProposalStatus,
+    createdAt: fromMysqlDateTime(row.created_at)!,
+    expiresAt: fromMysqlDateTime(row.expires_at)!
+  };
+}
+
+function mapScheduledArrestRow(row: RowDataPacket): ScheduledArrestRecord {
+  return {
+    scheduleId: String(row.schedule_id),
+    proposalId: row.proposal_id !== null ? String(row.proposal_id) : null,
+    permissionId: row.permission_id !== null ? String(row.permission_id) : null,
+    ownerUserId: String(row.owner_user_id),
+    partnerUserId: String(row.partner_user_id),
+    targetDeviceId: String(row.target_device_id),
+    scheduleType: row.schedule_type as 'SCHEDULED' | 'RECURRING',
+    sessionType: row.session_type as SessionType,
+    goal: String(row.goal),
+    durationMinutes: Number(row.duration_minutes),
+    blockingConfiguration: parseJsonColumn<BlockingConfigurationV1>(row.blocking_configuration),
+    timezone: String(row.timezone),
+    scheduledStartAt: fromMysqlDateTime(row.scheduled_start_at),
+    scheduledEndAt: fromMysqlDateTime(row.scheduled_end_at),
+    recurrenceRule:
+      row.recurrence_rule !== null
+        ? parseJsonColumn<RecurrenceRuleConfig>(row.recurrence_rule)
+        : null,
+    occurrencesCompleted: Number(row.occurrences_completed),
+    maxOccurrences: Number(row.max_occurrences),
+    nextOccurrenceAt: fromMysqlDateTime(row.next_occurrence_at),
+    status: row.status as ScheduledArrestStatus,
+    createdAt: fromMysqlDateTime(row.created_at)!,
+    updatedAt: fromMysqlDateTime(row.updated_at)!
+  };
+}
+
+class MysqlApprovalPoliciesRepository implements ApprovalPoliciesRepository {
+  constructor(private readonly db: SqlExecutor) {}
+
+  async findByOwnerAndPartner(
+    ownerUserId: string,
+    partnerUserId: string
+  ): Promise<PartnerApprovalPolicyRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM partner_approval_policies WHERE owner_user_id = ? AND partner_user_id = ? LIMIT 1',
+      [ownerUserId, partnerUserId]
+    );
+    return rows[0] ? mapApprovalPolicyRow(rows[0]) : null;
+  }
+
+  async findByOwnerAndPartnerForUpdate(
+    ownerUserId: string,
+    partnerUserId: string
+  ): Promise<PartnerApprovalPolicyRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM partner_approval_policies WHERE owner_user_id = ? AND partner_user_id = ? LIMIT 1 FOR UPDATE',
+      [ownerUserId, partnerUserId]
+    );
+    return rows[0] ? mapApprovalPolicyRow(rows[0]) : null;
+  }
+
+  async upsert(params: {
+    id: string;
+    ownerUserId: string;
+    partnerUserId: string;
+    requireApprovalBeforeArrest: boolean;
+    explicitlyConfigured: boolean;
+    notes?: string | null;
+    now: Date;
+  }): Promise<PartnerApprovalPolicyRecord> {
+    const ts = toMysqlDateTime(params.now);
+    await this.db.execute(
+      `INSERT INTO partner_approval_policies
+        (id, owner_user_id, partner_user_id, require_approval_before_arrest, explicitly_configured, notes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         require_approval_before_arrest = VALUES(require_approval_before_arrest),
+         explicitly_configured = VALUES(explicitly_configured),
+         notes = COALESCE(VALUES(notes), notes),
+         updated_at = VALUES(updated_at)`,
+      [
+        params.id,
+        params.ownerUserId,
+        params.partnerUserId,
+        params.requireApprovalBeforeArrest ? 1 : 0,
+        params.explicitlyConfigured ? 1 : 0,
+        params.notes ?? null,
+        ts,
+        ts
+      ]
+    );
+    const updated = await this.findByOwnerAndPartner(params.ownerUserId, params.partnerUserId);
+    return updated!;
+  }
+}
+
+class MysqlProposalsRepository implements ProposalsRepository {
+  constructor(private readonly db: SqlExecutor) {}
+
+  async createWithInitialRevision(
+    proposal: ArrestProposalRecord,
+    initialRevision: ArrestProposalRevisionRecord
+  ): Promise<{ proposal: ArrestProposalRecord; revision: ArrestProposalRevisionRecord }> {
+    try {
+      await this.db.execute(
+        `INSERT INTO arrest_proposals
+          (proposal_id, partnership_id, owner_user_id, partner_user_id, target_device_id,
+           proposer_user_id, recipient_user_id, request_type, current_revision, status,
+           normalized_configuration, reason, approved_revision, resulting_permission_id,
+           resulting_session_id, resulting_schedule_id, idempotency_key, expires_at,
+           responded_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          proposal.proposalId,
+          proposal.partnershipId,
+          proposal.ownerUserId,
+          proposal.partnerUserId,
+          proposal.targetDeviceId,
+          proposal.proposerUserId,
+          proposal.recipientUserId,
+          proposal.requestType,
+          proposal.currentRevision,
+          proposal.status,
+          JSON.stringify(proposal.normalizedConfiguration),
+          proposal.reason,
+          proposal.approvedRevision,
+          proposal.resultingPermissionId,
+          proposal.resultingSessionId,
+          proposal.resultingScheduleId,
+          proposal.idempotencyKey,
+          toMysqlDateTime(proposal.expiresAt),
+          proposal.respondedAt ? toMysqlDateTime(proposal.respondedAt) : null,
+          toMysqlDateTime(proposal.createdAt),
+          toMysqlDateTime(proposal.updatedAt)
+        ]
+      );
+
+      await this.db.execute(
+        `INSERT INTO arrest_proposal_revisions
+          (id, proposal_id, revision_number, proposer_user_id, recipient_user_id,
+           normalized_configuration, reason, status, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          initialRevision.id,
+          initialRevision.proposalId,
+          initialRevision.revisionNumber,
+          initialRevision.proposerUserId,
+          initialRevision.recipientUserId,
+          JSON.stringify(initialRevision.normalizedConfiguration),
+          initialRevision.reason,
+          initialRevision.status,
+          toMysqlDateTime(initialRevision.createdAt),
+          toMysqlDateTime(initialRevision.expiresAt)
+        ]
+      );
+
+      return { proposal, revision: initialRevision };
+    } catch (err) {
+      if (isMysqlDuplicateError(err) && err.message.includes('uq_proposals_proposer_idem')) {
+        throw Errors.conflict(
+          'IDEMPOTENCY_CONFLICT',
+          'A proposal with this idempotency key already exists.'
+        );
+      }
+      throw err;
+    }
+  }
+
+  async findById(proposalId: string): Promise<ArrestProposalRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM arrest_proposals WHERE proposal_id = ? LIMIT 1',
+      [proposalId]
+    );
+    return rows[0] ? mapProposalRow(rows[0]) : null;
+  }
+
+  async findByIdForUpdate(proposalId: string): Promise<ArrestProposalRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM arrest_proposals WHERE proposal_id = ? LIMIT 1 FOR UPDATE',
+      [proposalId]
+    );
+    return rows[0] ? mapProposalRow(rows[0]) : null;
+  }
+
+  async findByProposerAndIdempotencyKey(
+    proposerUserId: string,
+    idempotencyKey: string
+  ): Promise<ArrestProposalRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM arrest_proposals WHERE proposer_user_id = ? AND idempotency_key = ? LIMIT 1',
+      [proposerUserId, idempotencyKey]
+    );
+    return rows[0] ? mapProposalRow(rows[0]) : null;
+  }
+
+  async listRevisions(proposalId: string): Promise<ArrestProposalRevisionRecord[]> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM arrest_proposal_revisions WHERE proposal_id = ? ORDER BY revision_number ASC',
+      [proposalId]
+    );
+    return rows.map(mapProposalRevisionRow);
+  }
+
+  async listForUser(
+    userId: string,
+    options: {
+      role?: 'incoming' | 'outgoing' | 'all';
+      status?: ArrestProposalStatus;
+      partnerUserId?: string;
+      limit: number;
+      offset: number;
+    }
+  ): Promise<PaginatedResult<ArrestProposalRecord>> {
+    const conditions: string[] = [];
+    const params: SqlParam[] = [];
+
+    if (options.role === 'incoming') {
+      conditions.push('recipient_user_id = ?');
+      params.push(userId);
+    } else if (options.role === 'outgoing') {
+      conditions.push('proposer_user_id = ?');
+      params.push(userId);
+    } else {
+      conditions.push('(owner_user_id = ? OR partner_user_id = ?)');
+      params.push(userId, userId);
+    }
+
+    if (options.status) {
+      conditions.push('status = ?');
+      params.push(options.status);
+    }
+    if (options.partnerUserId) {
+      conditions.push(
+        '((owner_user_id = ? AND partner_user_id = ?) OR (owner_user_id = ? AND partner_user_id = ?))'
+      );
+      params.push(userId, options.partnerUserId, options.partnerUserId, userId);
+    }
+
+    const whereSql = conditions.join(' AND ');
+    const [countRows] = await this.db.execute<RowDataPacket[]>(
+      `SELECT COUNT(*) AS total FROM arrest_proposals WHERE ${whereSql}`,
+      params
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      `SELECT * FROM arrest_proposals WHERE ${whereSql} ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
+      [...params, String(options.limit), String(options.offset)]
+    );
+
+    return {
+      items: rows.map(mapProposalRow),
+      total,
+      limit: options.limit,
+      offset: options.offset
+    };
+  }
+
+  async addCounterofferRevision(
+    proposalId: string,
+    updates: {
+      proposerUserId: string;
+      recipientUserId: string;
+      requestType: ArrestRequestType;
+      currentRevision: number;
+      status: ArrestProposalStatus;
+      normalizedConfiguration: NormalizedProposalConfigurationV1;
+      reason: string | null;
+      expiresAt: Date;
+      updatedAt: Date;
+    },
+    newRevision: ArrestProposalRevisionRecord
+  ): Promise<{ proposal: ArrestProposalRecord; revision: ArrestProposalRevisionRecord }> {
+    await this.db.execute(
+      `UPDATE arrest_proposals
+       SET proposer_user_id = ?, recipient_user_id = ?, request_type = ?, current_revision = ?,
+           status = ?, normalized_configuration = ?, reason = ?, expires_at = ?, updated_at = ?
+       WHERE proposal_id = ?`,
+      [
+        updates.proposerUserId,
+        updates.recipientUserId,
+        updates.requestType,
+        updates.currentRevision,
+        updates.status,
+        JSON.stringify(updates.normalizedConfiguration),
+        updates.reason,
+        toMysqlDateTime(updates.expiresAt),
+        toMysqlDateTime(updates.updatedAt),
+        proposalId
+      ]
+    );
+
+    await this.db.execute(
+      `INSERT INTO arrest_proposal_revisions
+        (id, proposal_id, revision_number, proposer_user_id, recipient_user_id,
+         normalized_configuration, reason, status, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        newRevision.id,
+        newRevision.proposalId,
+        newRevision.revisionNumber,
+        newRevision.proposerUserId,
+        newRevision.recipientUserId,
+        JSON.stringify(newRevision.normalizedConfiguration),
+        newRevision.reason,
+        newRevision.status,
+        toMysqlDateTime(newRevision.createdAt),
+        toMysqlDateTime(newRevision.expiresAt)
+      ]
+    );
+
+    const updated = await this.findById(proposalId);
+    if (!updated) {
+      throw Errors.notFound('PROPOSAL_NOT_FOUND', 'Proposal was not found.');
+    }
+    return { proposal: updated, revision: newRevision };
+  }
+
+  async updateStatusAndOutcome(
+    proposalId: string,
+    updates: {
+      status: ArrestProposalStatus;
+      approvedRevision?: number | null;
+      resultingPermissionId?: string | null;
+      resultingSessionId?: string | null;
+      resultingScheduleId?: string | null;
+      respondedAt?: Date | null;
+      updatedAt: Date;
+    }
+  ): Promise<ArrestProposalRecord> {
+    const setClauses: string[] = ['status = ?', 'updated_at = ?'];
+    const params: SqlParam[] = [updates.status, toMysqlDateTime(updates.updatedAt)];
+
+    if (updates.approvedRevision !== undefined) {
+      setClauses.push('approved_revision = ?');
+      params.push(updates.approvedRevision);
+    }
+    if (updates.resultingPermissionId !== undefined) {
+      setClauses.push('resulting_permission_id = ?');
+      params.push(updates.resultingPermissionId);
+    }
+    if (updates.resultingSessionId !== undefined) {
+      setClauses.push('resulting_session_id = ?');
+      params.push(updates.resultingSessionId);
+    }
+    if (updates.resultingScheduleId !== undefined) {
+      setClauses.push('resulting_schedule_id = ?');
+      params.push(updates.resultingScheduleId);
+    }
+    if (updates.respondedAt !== undefined) {
+      setClauses.push('responded_at = ?');
+      params.push(updates.respondedAt ? toMysqlDateTime(updates.respondedAt) : null);
+    }
+
+    params.push(proposalId);
+    await this.db.execute(
+      `UPDATE arrest_proposals SET ${setClauses.join(', ')} WHERE proposal_id = ?`,
+      params
+    );
+
+    const updated = await this.findById(proposalId);
+    if (!updated) {
+      throw Errors.notFound('PROPOSAL_NOT_FOUND', 'Proposal was not found.');
+    }
+
+    await this.db.execute(
+      'UPDATE arrest_proposal_revisions SET status = ? WHERE proposal_id = ? AND revision_number = ?',
+      [updates.status, proposalId, updated.currentRevision]
+    );
+
+    return updated;
+  }
+
+  async expireOverdueProposals(now: Date): Promise<number> {
+    const ts = toMysqlDateTime(now);
+    const [res] = await this.db.execute<ResultSetHeader>(
+      `UPDATE arrest_proposals
+       SET status = 'EXPIRED', responded_at = ?, updated_at = ?
+       WHERE status IN ('PENDING', 'COUNTEROFFERED') AND expires_at <= ?`,
+      [ts, ts, ts]
+    );
+    return res.affectedRows;
+  }
+
+  async cancelPendingBetweenUsers(userA: string, userB: string, now: Date): Promise<number> {
+    const ts = toMysqlDateTime(now);
+    const [res] = await this.db.execute<ResultSetHeader>(
+      `UPDATE arrest_proposals
+       SET status = 'CANCELLED', responded_at = ?, updated_at = ?
+       WHERE status IN ('PENDING', 'COUNTEROFFERED', 'DRAFT')
+         AND ((owner_user_id = ? AND partner_user_id = ?) OR (owner_user_id = ? AND partner_user_id = ?))`,
+      [ts, ts, userA, userB, userB, userA]
+    );
+    return res.affectedRows;
+  }
+}
+
+class MysqlScheduledArrestsRepository implements ScheduledArrestsRepository {
+  constructor(private readonly db: SqlExecutor) {}
+
+  async create(record: ScheduledArrestRecord): Promise<ScheduledArrestRecord> {
+    await this.db.execute(
+      `INSERT INTO scheduled_arrests
+        (schedule_id, proposal_id, permission_id, owner_user_id, partner_user_id, target_device_id,
+         schedule_type, session_type, goal, duration_minutes, blocking_configuration, timezone,
+         scheduled_start_at, scheduled_end_at, recurrence_rule, occurrences_completed, max_occurrences,
+         next_occurrence_at, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        record.scheduleId,
+        record.proposalId,
+        record.permissionId,
+        record.ownerUserId,
+        record.partnerUserId,
+        record.targetDeviceId,
+        record.scheduleType,
+        record.sessionType,
+        record.goal,
+        record.durationMinutes,
+        JSON.stringify(record.blockingConfiguration),
+        record.timezone,
+        record.scheduledStartAt ? toMysqlDateTime(record.scheduledStartAt) : null,
+        record.scheduledEndAt ? toMysqlDateTime(record.scheduledEndAt) : null,
+        record.recurrenceRule ? JSON.stringify(record.recurrenceRule) : null,
+        record.occurrencesCompleted,
+        record.maxOccurrences,
+        record.nextOccurrenceAt ? toMysqlDateTime(record.nextOccurrenceAt) : null,
+        record.status,
+        toMysqlDateTime(record.createdAt),
+        toMysqlDateTime(record.updatedAt)
+      ]
+    );
+    return record;
+  }
+
+  async findById(scheduleId: string): Promise<ScheduledArrestRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM scheduled_arrests WHERE schedule_id = ? LIMIT 1',
+      [scheduleId]
+    );
+    return rows[0] ? mapScheduledArrestRow(rows[0]) : null;
+  }
+
+  async findByIdForUpdate(scheduleId: string): Promise<ScheduledArrestRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM scheduled_arrests WHERE schedule_id = ? LIMIT 1 FOR UPDATE',
+      [scheduleId]
+    );
+    return rows[0] ? mapScheduledArrestRow(rows[0]) : null;
+  }
+
+  async listForUser(
+    userId: string,
+    options: {
+      role?: 'owner' | 'partner' | 'all';
+      status?: ScheduledArrestStatus;
+      partnerUserId?: string;
+      deviceId?: string;
+      limit: number;
+      offset: number;
+    }
+  ): Promise<PaginatedResult<ScheduledArrestRecord>> {
+    const conditions: string[] = [];
+    const params: SqlParam[] = [];
+
+    if (options.role === 'owner') {
+      conditions.push('owner_user_id = ?');
+      params.push(userId);
+    } else if (options.role === 'partner') {
+      conditions.push('partner_user_id = ?');
+      params.push(userId);
+    } else {
+      conditions.push('(owner_user_id = ? OR partner_user_id = ?)');
+      params.push(userId, userId);
+    }
+
+    if (options.status) {
+      conditions.push('status = ?');
+      params.push(options.status);
+    }
+    if (options.partnerUserId) {
+      conditions.push(
+        '((owner_user_id = ? AND partner_user_id = ?) OR (owner_user_id = ? AND partner_user_id = ?))'
+      );
+      params.push(userId, options.partnerUserId, options.partnerUserId, userId);
+    }
+    if (options.deviceId) {
+      conditions.push('target_device_id = ?');
+      params.push(options.deviceId);
+    }
+
+    const whereSql = conditions.join(' AND ');
+    const [countRows] = await this.db.execute<RowDataPacket[]>(
+      `SELECT COUNT(*) AS total FROM scheduled_arrests WHERE ${whereSql}`,
+      params
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      `SELECT * FROM scheduled_arrests WHERE ${whereSql} ORDER BY COALESCE(next_occurrence_at, created_at) ASC LIMIT ? OFFSET ?`,
+      [...params, String(options.limit), String(options.offset)]
+    );
+
+    return {
+      items: rows.map(mapScheduledArrestRow),
+      total,
+      limit: options.limit,
+      offset: options.offset
+    };
+  }
+
+  async updateStatusAndOccurrence(
+    scheduleId: string,
+    updates: {
+      status?: ScheduledArrestStatus;
+      occurrencesCompleted?: number;
+      nextOccurrenceAt?: Date | null;
+      updatedAt: Date;
+    }
+  ): Promise<ScheduledArrestRecord> {
+    const setClauses: string[] = ['updated_at = ?'];
+    const params: SqlParam[] = [toMysqlDateTime(updates.updatedAt)];
+
+    if (updates.status !== undefined) {
+      setClauses.push('status = ?');
+      params.push(updates.status);
+    }
+    if (updates.occurrencesCompleted !== undefined) {
+      setClauses.push('occurrences_completed = ?');
+      params.push(updates.occurrencesCompleted);
+    }
+    if (updates.nextOccurrenceAt !== undefined) {
+      setClauses.push('next_occurrence_at = ?');
+      params.push(updates.nextOccurrenceAt ? toMysqlDateTime(updates.nextOccurrenceAt) : null);
+    }
+
+    params.push(scheduleId);
+    await this.db.execute(
+      `UPDATE scheduled_arrests SET ${setClauses.join(', ')} WHERE schedule_id = ?`,
+      params
+    );
+    const updated = await this.findById(scheduleId);
+    if (!updated) {
+      throw Errors.notFound('SCHEDULE_NOT_FOUND', 'Scheduled arrest was not found.');
+    }
+    return updated;
+  }
+
+  async revokeByPermissionId(permissionId: string, now: Date): Promise<number> {
+    const ts = toMysqlDateTime(now);
+    const [res] = await this.db.execute<ResultSetHeader>(
+      `UPDATE scheduled_arrests
+       SET status = 'REVOKED', updated_at = ?
+       WHERE permission_id = ? AND status = 'SCHEDULED'`,
+      [ts, permissionId]
+    );
+    return res.affectedRows;
+  }
+
+  async revokeBetweenUsers(userA: string, userB: string, now: Date): Promise<number> {
+    const ts = toMysqlDateTime(now);
+    const [res] = await this.db.execute<ResultSetHeader>(
+      `UPDATE scheduled_arrests
+       SET status = 'REVOKED', updated_at = ?
+       WHERE status = 'SCHEDULED'
+         AND ((owner_user_id = ? AND partner_user_id = ?) OR (owner_user_id = ? AND partner_user_id = ?))`,
+      [ts, userA, userB, userB, userA]
     );
     return res.affectedRows;
   }
@@ -1965,6 +2679,9 @@ function createBundle(executor: SqlExecutor): RepositoryBundle {
     pushTokens: new MysqlPushTokensRepository(executor),
     partnerships: new MysqlPartnershipsRepository(executor),
     partnerPermissions: new MysqlPartnerPermissionsRepository(executor),
+    approvalPolicies: new MysqlApprovalPoliciesRepository(executor),
+    proposals: new MysqlProposalsRepository(executor),
+    scheduledArrests: new MysqlScheduledArrestsRepository(executor),
     sessions: new MysqlSessionsRepository(executor),
     commands: new MysqlCommandsRepository(executor),
     releaseRequests: new MysqlReleaseRequestsRepository(executor),

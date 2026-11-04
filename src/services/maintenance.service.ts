@@ -27,6 +27,7 @@ export class MaintenanceService {
     const dbSummary = await this.store.withTransaction(async (repos) => {
       const expiredCmds = await repos.commands.expireOverdueCommands(now);
       const expiredReleases = await repos.releaseRequests.expirePendingForEndedSessions(now);
+      await repos.proposals.expireOverdueProposals(now);
       const purgedTokens = await repos.refreshTokens.deleteExpiredBefore(refreshPurgeCutoff);
 
       await this.auditService.record(repos.auditLogs, {

@@ -8,10 +8,15 @@ import {
   UuidParamSchema
 } from '../../shared/http-schemas';
 import {
+  ApprovalPolicyResponseSchema,
+  DiscoverPartnerQuerySchema,
   ListPartnerRequestsQuerySchema,
   PaginatedPartnershipsResponseSchema,
+  PartnerDiscoveryResponseSchema,
+  PartnerProfileResponseSchema,
   PartnershipResponseSchema,
-  SendPartnerRequestBodySchema
+  SendPartnerRequestBodySchema,
+  UpdateApprovalPolicyBodySchema
 } from './partners.schemas';
 import type { PartnersService } from './partners.service';
 
@@ -23,6 +28,31 @@ export function registerPartnersRoutes(
   }
 ): void {
   const router = app.withTypeProvider<ZodTypeProvider>();
+
+  router.get(
+    '/api/v1/partners/discover',
+    {
+      preHandler: [deps.authenticate],
+      schema: {
+        tags: ['Partners'],
+        summary:
+          'Discover a user by exact username or invite code and retrieve relationship state and pending counts',
+        security: [{ bearerAuth: [] }],
+        querystring: DiscoverPartnerQuerySchema,
+        response: {
+          200: PartnerDiscoveryResponseSchema,
+          401: ErrorResponseSchema
+        }
+      }
+    },
+    async (request, reply) => {
+      const discovery = await deps.partnersService.discoverUserAndCounts(
+        request.authUser!.id,
+        request.query
+      );
+      return reply.status(200).send(discovery);
+    }
+  );
 
   router.post(
     '/api/v1/partners/requests',
@@ -36,7 +66,7 @@ export function registerPartnersRoutes(
       },
       schema: {
         tags: ['Partners'],
-        summary: 'Send a partnership invitation by exact username or user ID',
+        summary: 'Send a partnership invitation by exact username, invite code, or user ID',
         security: [{ bearerAuth: [] }],
         body: SendPartnerRequestBodySchema,
         response: {
@@ -154,6 +184,93 @@ export function registerPartnersRoutes(
     async (request, reply) => {
       const page = await deps.partnersService.listPartners(request.authUser!.id, request.query);
       return reply.status(200).send(page);
+    }
+  );
+
+  router.get(
+    '/api/v1/partners/:id/profile',
+    {
+      preHandler: [deps.authenticate],
+      schema: {
+        tags: ['Partners'],
+        summary:
+          'Retrieve comprehensive partner profile including devices, permissions, approval policies, pending proposals, and active schedules',
+        security: [{ bearerAuth: [] }],
+        params: UuidParamSchema,
+        response: {
+          200: z.object({ profile: PartnerProfileResponseSchema }),
+          401: ErrorResponseSchema,
+          404: ErrorResponseSchema
+        }
+      }
+    },
+    async (request, reply) => {
+      const profile = await deps.partnersService.getPartnerProfile(
+        request.authUser!.id,
+        request.params.id
+      );
+      return reply.status(200).send({ profile });
+    }
+  );
+
+  router.get(
+    '/api/v1/partners/:id/approval-policy',
+    {
+      preHandler: [deps.authenticate],
+      schema: {
+        tags: ['Partners'],
+        summary: 'Retrieve directional approval policies and standing authorizations for a partner',
+        security: [{ bearerAuth: [] }],
+        params: UuidParamSchema,
+        response: {
+          200: z.object({
+            myApprovalPolicyForPartner: ApprovalPolicyResponseSchema,
+            partnerApprovalPolicyForMe: ApprovalPolicyResponseSchema
+          }),
+          401: ErrorResponseSchema,
+          404: ErrorResponseSchema
+        }
+      }
+    },
+    async (request, reply) => {
+      const policies = await deps.partnersService.getApprovalPoliciesForPartner(
+        request.authUser!.id,
+        request.params.id
+      );
+      return reply.status(200).send(policies);
+    }
+  );
+
+  router.put(
+    '/api/v1/partners/:id/approval-policy',
+    {
+      preHandler: [deps.authenticate],
+      schema: {
+        tags: ['Partners'],
+        summary:
+          'Configure requireApprovalBeforeArrest policy for a partner (does not grant unlimited authority)',
+        security: [{ bearerAuth: [] }],
+        params: UuidParamSchema,
+        body: UpdateApprovalPolicyBodySchema,
+        response: {
+          200: z.object({
+            myApprovalPolicyForPartner: ApprovalPolicyResponseSchema,
+            partnerApprovalPolicyForMe: ApprovalPolicyResponseSchema
+          }),
+          401: ErrorResponseSchema,
+          403: ErrorResponseSchema,
+          404: ErrorResponseSchema
+        }
+      }
+    },
+    async (request, reply) => {
+      const policies = await deps.partnersService.updateApprovalPolicyForPartner(
+        request.authUser!.id,
+        request.params.id,
+        request.body,
+        extractRequestContext(request)
+      );
+      return reply.status(200).send(policies);
     }
   );
 

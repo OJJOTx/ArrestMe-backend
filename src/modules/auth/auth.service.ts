@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { AuditService, RequestContextMeta } from '../../services/audit.service';
 import {
   generateOpaqueRefreshToken,
@@ -11,6 +11,10 @@ import type { Clock } from '../../shared/time';
 import type { AuthenticatedUserProfile, UserRecord } from '../../types/domain';
 import type { DataStore, RepositoryBundle } from '../../types/repositories';
 
+export function generateInviteCode(): string {
+  return `AM-${randomBytes(5).toString('hex').toUpperCase()}`;
+}
+
 export function serializeAuthenticatedUser(user: UserRecord): AuthenticatedUserProfile {
   return {
     id: user.id,
@@ -18,6 +22,7 @@ export function serializeAuthenticatedUser(user: UserRecord): AuthenticatedUserP
     email: user.email,
     displayName: user.displayName,
     avatarUrl: user.avatarUrl,
+    inviteCode: user.inviteCode ?? null,
     accountStatus: user.accountStatus,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
@@ -77,6 +82,7 @@ export class AuthService {
         passwordHash,
         displayName: input.displayName ?? input.username,
         avatarUrl: null,
+        inviteCode: generateInviteCode(),
         accountStatus: 'ACTIVE',
         createdAt: now,
         updatedAt: now,

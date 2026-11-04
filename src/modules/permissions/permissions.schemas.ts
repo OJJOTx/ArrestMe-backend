@@ -86,11 +86,29 @@ export const SafeDeviceSummarySchema = z.object({
   deviceStatus: z.enum(['ACTIVE', 'INACTIVE', 'REVOKED'])
 });
 
+export const ExactApprovedSessionConfigSchema = z.object({
+  sessionType: z.enum(['SELF_ARREST', 'PARTNER_ARREST', 'MUTUAL_ARREST']),
+  goal: z.string(),
+  durationMinutes: z.number().int(),
+  blockingConfiguration: z.object({
+    schemaVersion: z.literal(1),
+    ruleMode: BlockingRuleModeEnum,
+    allowedCategories: z.array(AllowedCategoryEnum),
+    overlayStatusBar: z.boolean(),
+    disableEmergencyExit: z.boolean(),
+    blockedPackages: z.array(z.string()).optional(),
+    allowedStudyPackages: z.array(z.string()).optional()
+  })
+});
+
 export const PartnerPermissionResponseSchema = z.object({
   permissionId: z.string().uuid(),
   owner: PublicUserSchema,
   partner: PublicUserSchema,
   targetDevice: SafeDeviceSummarySchema,
+  proposalId: z.string().uuid().nullable().optional(),
+  approvedRevision: z.number().int().nullable().optional(),
+  exactBlockingConfiguration: ExactApprovedSessionConfigSchema.nullable().optional(),
   maximumSessionDuration: z.number().int(),
   allowedTimeWindows: AllowedTimeWindowsSchema.nullable(),
   allowedSessionTypes: z.array(z.enum(['SELF_ARREST', 'PARTNER_ARREST', 'MUTUAL_ARREST'])),

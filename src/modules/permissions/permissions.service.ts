@@ -10,6 +10,7 @@ import type {
   BlockingConfigLimitsV1,
   BlockingConfigurationV1,
   DeviceRecord,
+  ExactApprovedSessionConfig,
   PaginatedResult,
   PartnerPermissionRecord,
   PublicUserProfile,
@@ -29,6 +30,9 @@ export interface SerializedPartnerPermission {
     platform: 'ANDROID';
     deviceStatus: 'ACTIVE' | 'INACTIVE' | 'REVOKED';
   };
+  proposalId: string | null;
+  approvedRevision: number | null;
+  exactBlockingConfiguration: ExactApprovedSessionConfig | null;
   maximumSessionDuration: number;
   allowedTimeWindows: AllowedTimeWindowsConfig | null;
   allowedSessionTypes: SessionType[];
@@ -507,6 +511,51 @@ export class PermissionsService {
       );
     }
 
+    const approvalPolicy = await repos.approvalPolicies.findByOwnerAndPartnerForUpdate(
+      params.ownerUserId,
+      params.initiatorUserId
+    );
+    if (
+      approvalPolicy &&
+      approvalPolicy.explicitlyConfigured &&
+      approvalPolicy.requireApprovalBeforeArrest &&
+      !permission.oneTimeOnly &&
+      !permission.exactBlockingConfiguration
+    ) {
+      throw Errors.forbidden(
+        'APPROVAL_REQUIRED',
+        'Device owner requires explicit per-session request approval before initiating an Arrest session.'
+      );
+    }
+
+    if (permission.exactBlockingConfiguration) {
+      const exact = permission.exactBlockingConfiguration;
+      const cfg = params.blockingConfiguration;
+      const exactCfg = exact.blockingConfiguration;
+      const sameSet = (a: readonly string[] = [], b: readonly string[] = []) => {
+        if (a.length !== b.length) return false;
+        const setB = new Set(b);
+        return a.every((item) => setB.has(item));
+      };
+
+      const matchesExact =
+        params.sessionType === exact.sessionType &&
+        params.requestedDurationMinutes === exact.durationMinutes &&
+        cfg.ruleMode === exactCfg.ruleMode &&
+        cfg.overlayStatusBar === exactCfg.overlayStatusBar &&
+        cfg.disableEmergencyExit === exactCfg.disableEmergencyExit &&
+        sameSet(cfg.allowedCategories, exactCfg.allowedCategories) &&
+        sameSet(cfg.blockedPackages ?? [], exactCfg.blockedPackages ?? []) &&
+        sameSet(cfg.allowedStudyPackages ?? [], exactCfg.allowedStudyPackages ?? []);
+
+      if (!matchesExact) {
+        throw Errors.forbidden(
+          'PERMISSION_LIMIT_EXCEEDED',
+          'Session parameters do not match the exact configuration approved by the device owner.'
+        );
+      }
+    }
+
     if (!permission.allowedSessionTypes.includes(params.sessionType)) {
       throw Errors.forbidden(
         'PERMISSION_LIMIT_EXCEEDED',
@@ -616,7 +665,7 @@ export class PermissionsService {
     return this.formatPermission(record, users, devices, this.clock.now());
   }
 
-  private formatPermission(
+  public formatPermission(
     record: PartnerPermissionRecord,
     users: Map<string, UserRecord>,
     devices: Map<string, DeviceRecord>,
@@ -659,6 +708,9 @@ export class PermissionsService {
             platform: 'ANDROID',
             deviceStatus: 'REVOKED'
           },
+      proposalId: record.proposalId ?? null,
+      approvedRevision: record.approvedRevision ?? null,
+      exactBlockingConfiguration: record.exactBlockingConfiguration ?? null,
       maximumSessionDuration: record.maximumSessionDuration,
       allowedTimeWindows: record.allowedTimeWindows,
       allowedSessionTypes: record.allowedSessionTypes,

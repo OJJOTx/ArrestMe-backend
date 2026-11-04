@@ -1,5 +1,9 @@
 import type {
   AndroidEngineState,
+  ArrestProposalRecord,
+  ArrestProposalRevisionRecord,
+  ArrestProposalStatus,
+  ArrestRequestType,
   ArrestSessionRecord,
   AuditLogRecord,
   AuditResult,
@@ -11,7 +15,9 @@ import type {
   DevicePushTokenRecord,
   DeviceRecord,
   DeviceStatus,
+  NormalizedProposalConfigurationV1,
   PaginatedResult,
+  PartnerApprovalPolicyRecord,
   PartnerPermissionRecord,
   PartnershipRecord,
   PartnershipState,
@@ -19,6 +25,8 @@ import type {
   RefreshTokenRecord,
   ReleaseRequestRecord,
   ReleaseRequestStatus,
+  ScheduledArrestRecord,
+  ScheduledArrestStatus,
   SessionCommandRecord,
   SessionSyncEventRecord,
   SessionType,
@@ -32,6 +40,8 @@ export interface UsersRepository {
   findByIds(ids: string[]): Promise<Map<string, UserRecord>>;
   findByEmail(normalizedEmail: string): Promise<UserRecord | null>;
   findByUsername(normalizedUsername: string): Promise<UserRecord | null>;
+  findByInviteCode(inviteCode: string): Promise<UserRecord | null>;
+  updateInviteCode(userId: string, inviteCode: string, updatedAt: Date): Promise<UserRecord | null>;
   updateProfile(
     userId: string,
     updates: { displayName?: string; avatarUrl?: string | null; updatedAt: Date }
@@ -307,6 +317,107 @@ export interface AuditLogsRepository {
   listByActor(actorUserId: string, limit: number): Promise<AuditLogRecord[]>;
 }
 
+export interface ApprovalPoliciesRepository {
+  findByOwnerAndPartner(
+    ownerUserId: string,
+    partnerUserId: string
+  ): Promise<PartnerApprovalPolicyRecord | null>;
+  findByOwnerAndPartnerForUpdate(
+    ownerUserId: string,
+    partnerUserId: string
+  ): Promise<PartnerApprovalPolicyRecord | null>;
+  upsert(params: {
+    id: string;
+    ownerUserId: string;
+    partnerUserId: string;
+    requireApprovalBeforeArrest: boolean;
+    explicitlyConfigured: boolean;
+    notes?: string | null;
+    now: Date;
+  }): Promise<PartnerApprovalPolicyRecord>;
+}
+
+export interface ProposalsRepository {
+  createWithInitialRevision(
+    proposal: ArrestProposalRecord,
+    initialRevision: ArrestProposalRevisionRecord
+  ): Promise<{ proposal: ArrestProposalRecord; revision: ArrestProposalRevisionRecord }>;
+  findById(proposalId: string): Promise<ArrestProposalRecord | null>;
+  findByIdForUpdate(proposalId: string): Promise<ArrestProposalRecord | null>;
+  findByProposerAndIdempotencyKey(
+    proposerUserId: string,
+    idempotencyKey: string
+  ): Promise<ArrestProposalRecord | null>;
+  listRevisions(proposalId: string): Promise<ArrestProposalRevisionRecord[]>;
+  listForUser(
+    userId: string,
+    options: {
+      role?: 'incoming' | 'outgoing' | 'all';
+      status?: ArrestProposalStatus;
+      partnerUserId?: string;
+      limit: number;
+      offset: number;
+    }
+  ): Promise<PaginatedResult<ArrestProposalRecord>>;
+  addCounterofferRevision(
+    proposalId: string,
+    updates: {
+      proposerUserId: string;
+      recipientUserId: string;
+      requestType: ArrestRequestType;
+      currentRevision: number;
+      status: ArrestProposalStatus;
+      normalizedConfiguration: NormalizedProposalConfigurationV1;
+      reason: string | null;
+      expiresAt: Date;
+      updatedAt: Date;
+    },
+    newRevision: ArrestProposalRevisionRecord
+  ): Promise<{ proposal: ArrestProposalRecord; revision: ArrestProposalRevisionRecord }>;
+  updateStatusAndOutcome(
+    proposalId: string,
+    updates: {
+      status: ArrestProposalStatus;
+      approvedRevision?: number | null;
+      resultingPermissionId?: string | null;
+      resultingSessionId?: string | null;
+      resultingScheduleId?: string | null;
+      respondedAt?: Date | null;
+      updatedAt: Date;
+    }
+  ): Promise<ArrestProposalRecord>;
+  expireOverdueProposals(now: Date): Promise<number>;
+  cancelPendingBetweenUsers(userA: string, userB: string, now: Date): Promise<number>;
+}
+
+export interface ScheduledArrestsRepository {
+  create(record: ScheduledArrestRecord): Promise<ScheduledArrestRecord>;
+  findById(scheduleId: string): Promise<ScheduledArrestRecord | null>;
+  findByIdForUpdate(scheduleId: string): Promise<ScheduledArrestRecord | null>;
+  listForUser(
+    userId: string,
+    options: {
+      role?: 'owner' | 'partner' | 'all';
+      status?: ScheduledArrestStatus;
+      partnerUserId?: string;
+      deviceId?: string;
+      limit: number;
+      offset: number;
+    }
+  ): Promise<PaginatedResult<ScheduledArrestRecord>>;
+  updateStatusAndOccurrence(
+    scheduleId: string,
+    updates: {
+      status?: ScheduledArrestStatus;
+      occurrencesCompleted?: number;
+      nextOccurrenceAt?: Date | null;
+      updatedAt: Date;
+    }
+  ): Promise<ScheduledArrestRecord>;
+  revokeByPermissionId(permissionId: string, now: Date): Promise<number>;
+  revokeBetweenUsers(userA: string, userB: string, now: Date): Promise<number>;
+}
+
 export interface RepositoryBundle {
   users: UsersRepository;
   refreshTokens: RefreshTokensRepository;
@@ -314,6 +425,9 @@ export interface RepositoryBundle {
   pushTokens: PushTokensRepository;
   partnerships: PartnershipsRepository;
   partnerPermissions: PartnerPermissionsRepository;
+  approvalPolicies: ApprovalPoliciesRepository;
+  proposals: ProposalsRepository;
+  scheduledArrests: ScheduledArrestsRepository;
   sessions: SessionsRepository;
   commands: CommandsRepository;
   releaseRequests: ReleaseRequestsRepository;

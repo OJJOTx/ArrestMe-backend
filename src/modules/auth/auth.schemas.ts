@@ -57,6 +57,7 @@ export const AuthenticatedUserResponseSchema = z.object({
   email: z.string().email(),
   displayName: z.string(),
   avatarUrl: z.string().nullable(),
+  inviteCode: z.string().nullable().optional(),
   accountStatus: z.enum(['ACTIVE', 'SUSPENDED', 'DELETED']),
   createdAt: z.string(),
   updatedAt: z.string(),

@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { parseEnvironment } from '../../src/config/environment';
 import { loadMigrationFiles } from '../../src/database/migrator';
 import { JwtService, ScryptPasswordHasher, safeCompareSecret } from '../../src/shared/crypto';
-import { isWithinAllowedTimeWindows, toMysqlDateTime } from '../../src/shared/time';
+import {
+  computeNextRecurrenceUtc,
+  isWithinAllowedTimeWindows,
+  resolveLocalDateTimeToUtc,
+  toMysqlDateTime
+} from '../../src/shared/time';
 
 describe('Cryptography, Time Windows, Environment & SQL Migrations', () => {
   it('hashes and verifies passwords with default OWASP scrypt parameters and rejects tampering', async () => {
@@ -105,5 +110,51 @@ describe('Cryptography, Time Windows, Environment & SQL Migrations', () => {
     ]) {
       expect(joined).toContain(`CREATE TABLE IF NOT EXISTS ${requiredTable}`);
     }
+
+    const v04 = files.find((f) => f.version === '002_v04_partners_proposals_schedules');
+    expect(v04).toBeDefined();
+    const v04Joined = v04!.statements.join('\n');
+    for (const v04Table of [
+      'partner_approval_policies',
+      'arrest_proposals',
+      'arrest_proposal_revisions',
+      'scheduled_arrests'
+    ]) {
+      expect(v04Joined).toContain(`CREATE TABLE IF NOT EXISTS ${v04Table}`);
+    }
+  });
+
+  it('deterministically resolves DST transitions and recurring schedules across IANA timezones', () => {
+    // Fall-back DST in America/New_York: 2026-11-01 01:30 occurs twice (EDT -04:00 = 05:30Z, EST -05:00 = 06:30Z)
+    // Deterministic rule: selects the first occurrence (05:30:00.000Z)
+    const fallBackUtc = resolveLocalDateTimeToUtc('2026-11-01', '01:30', 'America/New_York');
+    expect(fallBackUtc.toISOString()).toBe('2026-11-01T05:30:00.000Z');
+
+    // Spring-forward DST gap in America/New_York: 2026-03-08 02:30 jumps to 03:30 EDT (07:30:00.000Z)
+    const springForwardUtc = resolveLocalDateTimeToUtc('2026-03-08', '02:30', 'America/New_York');
+    expect(springForwardUtc.toISOString()).toBe('2026-03-08T07:30:00.000Z');
+
+    // Recurring schedule across DST fall-back weekend
+    const rule = {
+      daysOfWeek: [0, 1], // Sunday & Monday
+      localStartTime: '09:00',
+      localEndTime: '10:00',
+      durationMinutes: 60,
+      timezone: 'America/New_York',
+      endDate: '2026-11-15',
+      maxOccurrences: 2
+    };
+
+    // Before Sunday 2026-11-01 (after fallback at 02:00, 09:00 is EST = UTC-5 -> 14:00Z)
+    const occ1 = computeNextRecurrenceUtc(rule, new Date('2026-10-31T12:00:00.000Z'), 0);
+    expect(occ1?.toISOString()).toBe('2026-11-01T14:00:00.000Z');
+
+    // Next occurrence after Sunday 09:00 is Monday 2026-11-02 09:00 EST -> 14:00Z
+    const occ2 = computeNextRecurrenceUtc(rule, occ1!, 1);
+    expect(occ2?.toISOString()).toBe('2026-11-02T14:00:00.000Z');
+
+    // Reached maxOccurrences = 2 -> returns null
+    const occ3 = computeNextRecurrenceUtc(rule, occ2!, 2);
+    expect(occ3).toBeNull();
   });
 });

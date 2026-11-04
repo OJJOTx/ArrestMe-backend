@@ -1,4 +1,4 @@
-import type { AllowedTimeWindowsConfig } from '../shared/time';
+import type { AllowedTimeWindowsConfig, RecurrenceRuleConfig } from '../shared/time';
 
 export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'DELETED';
 
@@ -9,6 +9,7 @@ export interface UserRecord {
   passwordHash: string;
   displayName: string;
   avatarUrl: string | null;
+  inviteCode?: string | null;
   accountStatus: AccountStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -24,6 +25,7 @@ export interface PublicUserProfile {
 
 export interface AuthenticatedUserProfile extends PublicUserProfile {
   email: string;
+  inviteCode?: string | null;
   accountStatus: AccountStatus;
   createdAt: string;
   updatedAt: string;
@@ -143,11 +145,21 @@ export interface BlockingConfigLimitsV1 {
   cooldownMinutes?: number;
 }
 
+export interface ExactApprovedSessionConfig {
+  sessionType: SessionType;
+  goal: string;
+  durationMinutes: number;
+  blockingConfiguration: BlockingConfigurationV1;
+}
+
 export interface PartnerPermissionRecord {
   permissionId: string;
   ownerUserId: string;
   partnerUserId: string;
   targetDeviceId: string;
+  proposalId?: string | null;
+  approvedRevision?: number | null;
+  exactBlockingConfiguration?: ExactApprovedSessionConfig | null;
   maximumSessionDuration: number;
   allowedTimeWindows: AllowedTimeWindowsConfig | null;
   allowedSessionTypes: SessionType[];
@@ -160,6 +172,134 @@ export interface PartnerPermissionRecord {
   revokedAt: Date | null;
   revokedByUserId: string | null;
   revokeReason: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface PartnerApprovalPolicyRecord {
+  id: string;
+  ownerUserId: string;
+  partnerUserId: string;
+  requireApprovalBeforeArrest: boolean;
+  explicitlyConfigured: boolean;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type ArrestRequestType =
+  | 'IMMEDIATE'
+  | 'SCHEDULED'
+  | 'RECURRING'
+  | 'STANDING_AUTHORIZATION';
+
+export type ArrestProposalStatus =
+  | 'DRAFT'
+  | 'PENDING'
+  | 'COUNTEROFFERED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  | 'EXPIRED';
+
+export interface ProposalScheduleSpec {
+  localDate: string;
+  localStartTime: string;
+  localEndTime?: string | null;
+  timezone: string;
+  scheduledStartUtc: string;
+  scheduledEndUtc: string;
+}
+
+export interface ProposalStandingAuthorizationSpec {
+  validFromUtc: string;
+  expiresAtUtc: string;
+  maximumSessionDuration: number;
+  allowedTimeWindows: AllowedTimeWindowsConfig | null;
+  blockingConfigLimits: BlockingConfigLimitsV1;
+}
+
+export interface NormalizedProposalConfigurationV1 {
+  schemaVersion: 1;
+  requestType: ArrestRequestType;
+  targetDeviceId: string;
+  ownerUserId: string;
+  initiatingPartnerUserId: string;
+  sessionType: 'PARTNER_ARREST' | 'MUTUAL_ARREST';
+  goal: string;
+  durationMinutes: number;
+  blockingConfiguration: BlockingConfigurationV1;
+  requireApprovalBeforeArrest: boolean;
+  schedule: ProposalScheduleSpec | null;
+  recurrence: RecurrenceRuleConfig | null;
+  standingAuthorization: ProposalStandingAuthorizationSpec | null;
+}
+
+export interface ArrestProposalRecord {
+  proposalId: string;
+  partnershipId: string;
+  ownerUserId: string;
+  partnerUserId: string;
+  targetDeviceId: string;
+  proposerUserId: string;
+  recipientUserId: string;
+  requestType: ArrestRequestType;
+  currentRevision: number;
+  status: ArrestProposalStatus;
+  normalizedConfiguration: NormalizedProposalConfigurationV1;
+  reason: string | null;
+  approvedRevision: number | null;
+  resultingPermissionId: string | null;
+  resultingSessionId: string | null;
+  resultingScheduleId: string | null;
+  idempotencyKey: string | null;
+  expiresAt: Date;
+  respondedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ArrestProposalRevisionRecord {
+  id: string;
+  proposalId: string;
+  revisionNumber: number;
+  proposerUserId: string;
+  recipientUserId: string;
+  normalizedConfiguration: NormalizedProposalConfigurationV1;
+  reason: string | null;
+  status: ArrestProposalStatus;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+export type ScheduledArrestStatus =
+  | 'SCHEDULED'
+  | 'ACTIVE'
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'REVOKED'
+  | 'EXPIRED';
+
+export interface ScheduledArrestRecord {
+  scheduleId: string;
+  proposalId: string | null;
+  permissionId: string | null;
+  ownerUserId: string;
+  partnerUserId: string;
+  targetDeviceId: string;
+  scheduleType: 'SCHEDULED' | 'RECURRING';
+  sessionType: SessionType;
+  goal: string;
+  durationMinutes: number;
+  blockingConfiguration: BlockingConfigurationV1;
+  timezone: string;
+  scheduledStartAt: Date | null;
+  scheduledEndAt: Date | null;
+  recurrenceRule: RecurrenceRuleConfig | null;
+  occurrencesCompleted: number;
+  maxOccurrences: number;
+  nextOccurrenceAt: Date | null;
+  status: ScheduledArrestStatus;
   createdAt: Date;
   updatedAt: Date;
 }

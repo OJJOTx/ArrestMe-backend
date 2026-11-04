@@ -4,6 +4,10 @@ import {
   NON_TERMINAL_CLOUD_SESSION_STATUSES,
   TERMINAL_CLOUD_SESSION_STATUSES,
   type AndroidEngineState,
+  type ArrestProposalRecord,
+  type ArrestProposalRevisionRecord,
+  type ArrestProposalStatus,
+  type ArrestRequestType,
   type ArrestSessionRecord,
   type AuditLogRecord,
   type AuditResult,
@@ -15,6 +19,8 @@ import {
   type DevicePushTokenRecord,
   type DeviceRecord,
   type DeviceStatus,
+  type NormalizedProposalConfigurationV1,
+  type PartnerApprovalPolicyRecord,
   type PartnerPermissionRecord,
   type PartnershipRecord,
   type PartnershipState,
@@ -22,22 +28,27 @@ import {
   type RefreshTokenRecord,
   type ReleaseRequestRecord,
   type ReleaseRequestStatus,
+  type ScheduledArrestRecord,
+  type ScheduledArrestStatus,
   type SessionCommandRecord,
   type SessionSyncEventRecord,
   type SessionType,
   type UserRecord
 } from '../types/domain';
 import type {
+  ApprovalPoliciesRepository,
   AuditLogsRepository,
   CommandsRepository,
   DataStore,
   DevicesRepository,
   PartnerPermissionsRepository,
   PartnershipsRepository,
+  ProposalsRepository,
   PushTokensRepository,
   RefreshTokensRepository,
   ReleaseRequestsRepository,
   RepositoryBundle,
+  ScheduledArrestsRepository,
   SessionsRepository,
   UsersRepository
 } from '../types/repositories';
@@ -49,6 +60,10 @@ interface MemoryState {
   pushTokens: DevicePushTokenRecord[];
   partnerships: PartnershipRecord[];
   partnerPermissions: PartnerPermissionRecord[];
+  approvalPolicies: PartnerApprovalPolicyRecord[];
+  proposals: ArrestProposalRecord[];
+  proposalRevisions: ArrestProposalRevisionRecord[];
+  scheduledArrests: ScheduledArrestRecord[];
   sessions: ArrestSessionRecord[];
   commands: SessionCommandRecord[];
   syncEvents: SessionSyncEventRecord[];
@@ -75,6 +90,10 @@ export class InMemoryDataStore implements DataStore {
     pushTokens: [],
     partnerships: [],
     partnerPermissions: [],
+    approvalPolicies: [],
+    proposals: [],
+    proposalRevisions: [],
+    scheduledArrests: [],
     sessions: [],
     commands: [],
     syncEvents: [],
@@ -165,6 +184,28 @@ export class InMemoryDataStore implements DataStore {
       findByUsername: async (username) => {
         const found = this.state.users.find((u) => u.username === username);
         return found ? cloneDeep(found) : null;
+      },
+      findByInviteCode: async (inviteCode) => {
+        const normalized = inviteCode.trim().toUpperCase();
+        const found = this.state.users.find(
+          (u) => u.inviteCode && u.inviteCode.toUpperCase() === normalized
+        );
+        return found ? cloneDeep(found) : null;
+      },
+      updateInviteCode: async (userId, inviteCode, updatedAt) => {
+        const normalized = inviteCode.trim().toUpperCase();
+        if (
+          this.state.users.some(
+            (u) => u.id !== userId && u.inviteCode && u.inviteCode.toUpperCase() === normalized
+          )
+        ) {
+          throw Errors.conflict('BAD_REQUEST', 'Invite code is already in use.');
+        }
+        const target = this.state.users.find((u) => u.id === userId);
+        if (!target) return null;
+        target.inviteCode = normalized;
+        target.updatedAt = cloneDeep(updatedAt);
+        return cloneDeep(target);
       },
       updateProfile: async (userId, updates) => {
         const target = this.state.users.find((u) => u.id === userId);
@@ -584,6 +625,12 @@ export class InMemoryDataStore implements DataStore {
           target.revokedByUserId = params.revokedByUserId;
           target.revokeReason = params.revokeReason;
           target.updatedAt = cloneDeep(params.now);
+          for (const sched of this.state.scheduledArrests) {
+            if (sched.permissionId === permissionId && sched.status === 'SCHEDULED') {
+              sched.status = 'REVOKED';
+              sched.updatedAt = cloneDeep(params.now);
+            }
+          }
         }
         return cloneDeep(target);
       },
@@ -601,6 +648,28 @@ export class InMemoryDataStore implements DataStore {
             count++;
           }
         }
+        for (const sched of this.state.scheduledArrests) {
+          const matchesPair =
+            (sched.ownerUserId === userA && sched.partnerUserId === userB) ||
+            (sched.ownerUserId === userB && sched.partnerUserId === userA);
+          if (matchesPair && sched.status === 'SCHEDULED') {
+            sched.status = 'REVOKED';
+            sched.updatedAt = cloneDeep(params.now);
+          }
+        }
+        for (const prop of this.state.proposals) {
+          const matchesPair =
+            (prop.ownerUserId === userA && prop.partnerUserId === userB) ||
+            (prop.ownerUserId === userB && prop.partnerUserId === userA);
+          if (
+            matchesPair &&
+            (prop.status === 'PENDING' || prop.status === 'COUNTEROFFERED' || prop.status === 'DRAFT')
+          ) {
+            prop.status = 'CANCELLED';
+            prop.respondedAt = cloneDeep(params.now);
+            prop.updatedAt = cloneDeep(params.now);
+          }
+        }
         return count;
       },
       revokeAllForDevice: async (deviceId, params) => {
@@ -611,6 +680,319 @@ export class InMemoryDataStore implements DataStore {
             p.revokedByUserId = params.revokedByUserId;
             p.revokeReason = params.revokeReason;
             p.updatedAt = cloneDeep(params.now);
+            count++;
+          }
+        }
+        for (const sched of this.state.scheduledArrests) {
+          if (sched.targetDeviceId === deviceId && sched.status === 'SCHEDULED') {
+            sched.status = 'REVOKED';
+            sched.updatedAt = cloneDeep(params.now);
+          }
+        }
+        return count;
+      }
+    };
+
+    const approvalPolicies: ApprovalPoliciesRepository = {
+      findByOwnerAndPartner: async (ownerUserId, partnerUserId) => {
+        const found = this.state.approvalPolicies.find(
+          (p) => p.ownerUserId === ownerUserId && p.partnerUserId === partnerUserId
+        );
+        return found ? cloneDeep(found) : null;
+      },
+      findByOwnerAndPartnerForUpdate: async (ownerUserId, partnerUserId) => {
+        const found = this.state.approvalPolicies.find(
+          (p) => p.ownerUserId === ownerUserId && p.partnerUserId === partnerUserId
+        );
+        return found ? cloneDeep(found) : null;
+      },
+      upsert: async (params) => {
+        let existing = this.state.approvalPolicies.find(
+          (p) => p.ownerUserId === params.ownerUserId && p.partnerUserId === params.partnerUserId
+        );
+        if (existing) {
+          existing.requireApprovalBeforeArrest = params.requireApprovalBeforeArrest;
+          existing.explicitlyConfigured = params.explicitlyConfigured;
+          if (params.notes !== undefined) existing.notes = params.notes;
+          existing.updatedAt = cloneDeep(params.now);
+        } else {
+          existing = {
+            id: params.id,
+            ownerUserId: params.ownerUserId,
+            partnerUserId: params.partnerUserId,
+            requireApprovalBeforeArrest: params.requireApprovalBeforeArrest,
+            explicitlyConfigured: params.explicitlyConfigured,
+            notes: params.notes ?? null,
+            createdAt: cloneDeep(params.now),
+            updatedAt: cloneDeep(params.now)
+          };
+          this.state.approvalPolicies.push(existing);
+        }
+        return cloneDeep(existing);
+      }
+    };
+
+    const proposals: ProposalsRepository = {
+      createWithInitialRevision: async (proposal, initialRevision) => {
+        if (
+          proposal.idempotencyKey &&
+          this.state.proposals.some(
+            (p) =>
+              p.proposerUserId === proposal.proposerUserId &&
+              p.idempotencyKey === proposal.idempotencyKey
+          )
+        ) {
+          throw Errors.conflict(
+            'IDEMPOTENCY_CONFLICT',
+            'A proposal with this idempotency key already exists.'
+          );
+        }
+        const propCopy = cloneDeep(proposal);
+        const revCopy = cloneDeep(initialRevision);
+        this.state.proposals.push(propCopy);
+        this.state.proposalRevisions.push(revCopy);
+        return { proposal: cloneDeep(propCopy), revision: cloneDeep(revCopy) };
+      },
+      findById: async (proposalId) => {
+        const found = this.state.proposals.find((p) => p.proposalId === proposalId);
+        return found ? cloneDeep(found) : null;
+      },
+      findByIdForUpdate: async (proposalId) => {
+        const found = this.state.proposals.find((p) => p.proposalId === proposalId);
+        return found ? cloneDeep(found) : null;
+      },
+      findByProposerAndIdempotencyKey: async (proposerUserId, idempotencyKey) => {
+        const found = this.state.proposals.find(
+          (p) => p.proposerUserId === proposerUserId && p.idempotencyKey === idempotencyKey
+        );
+        return found ? cloneDeep(found) : null;
+      },
+      listRevisions: async (proposalId) => {
+        return cloneDeep(
+          this.state.proposalRevisions
+            .filter((r) => r.proposalId === proposalId)
+            .sort((a, b) => a.revisionNumber - b.revisionNumber)
+        );
+      },
+      listForUser: async (userId, options) => {
+        const filtered = this.state.proposals
+          .filter((p) => {
+            const roleOk =
+              options.role === 'incoming'
+                ? p.recipientUserId === userId
+                : options.role === 'outgoing'
+                  ? p.proposerUserId === userId
+                  : p.ownerUserId === userId || p.partnerUserId === userId;
+            if (!roleOk) return false;
+            if (options.status && p.status !== options.status) return false;
+            if (options.partnerUserId) {
+              const otherId = p.ownerUserId === userId ? p.partnerUserId : p.ownerUserId;
+              if (otherId !== options.partnerUserId) return false;
+            }
+            return true;
+          })
+          .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+
+        return {
+          items: cloneDeep(filtered.slice(options.offset, options.offset + options.limit)),
+          total: filtered.length,
+          limit: options.limit,
+          offset: options.offset
+        };
+      },
+      addCounterofferRevision: async (
+        proposalId,
+        updates: {
+          proposerUserId: string;
+          recipientUserId: string;
+          requestType: ArrestRequestType;
+          currentRevision: number;
+          status: ArrestProposalStatus;
+          normalizedConfiguration: NormalizedProposalConfigurationV1;
+          reason: string | null;
+          expiresAt: Date;
+          updatedAt: Date;
+        },
+        newRevision
+      ) => {
+        const target = this.state.proposals.find((p) => p.proposalId === proposalId);
+        if (!target) {
+          throw Errors.notFound('PROPOSAL_NOT_FOUND', 'Proposal was not found.');
+        }
+        target.proposerUserId = updates.proposerUserId;
+        target.recipientUserId = updates.recipientUserId;
+        target.requestType = updates.requestType;
+        target.currentRevision = updates.currentRevision;
+        target.status = updates.status;
+        target.normalizedConfiguration = cloneDeep(updates.normalizedConfiguration);
+        target.reason = updates.reason;
+        target.expiresAt = cloneDeep(updates.expiresAt);
+        target.updatedAt = cloneDeep(updates.updatedAt);
+
+        const revCopy = cloneDeep(newRevision);
+        this.state.proposalRevisions.push(revCopy);
+        return { proposal: cloneDeep(target), revision: cloneDeep(revCopy) };
+      },
+      updateStatusAndOutcome: async (
+        proposalId,
+        updates: {
+          status: ArrestProposalStatus;
+          approvedRevision?: number | null;
+          resultingPermissionId?: string | null;
+          resultingSessionId?: string | null;
+          resultingScheduleId?: string | null;
+          respondedAt?: Date | null;
+          updatedAt: Date;
+        }
+      ) => {
+        const target = this.state.proposals.find((p) => p.proposalId === proposalId);
+        if (!target) {
+          throw Errors.notFound('PROPOSAL_NOT_FOUND', 'Proposal was not found.');
+        }
+        target.status = updates.status;
+        if (updates.approvedRevision !== undefined)
+          target.approvedRevision = updates.approvedRevision;
+        if (updates.resultingPermissionId !== undefined)
+          target.resultingPermissionId = updates.resultingPermissionId;
+        if (updates.resultingSessionId !== undefined)
+          target.resultingSessionId = updates.resultingSessionId;
+        if (updates.resultingScheduleId !== undefined)
+          target.resultingScheduleId = updates.resultingScheduleId;
+        if (updates.respondedAt !== undefined)
+          target.respondedAt = cloneDeep(updates.respondedAt);
+        target.updatedAt = cloneDeep(updates.updatedAt);
+
+        // Also update the latest revision row status if terminal
+        const latestRev = this.state.proposalRevisions.find(
+          (r) => r.proposalId === proposalId && r.revisionNumber === target.currentRevision
+        );
+        if (latestRev) {
+          latestRev.status = updates.status;
+        }
+
+        return cloneDeep(target);
+      },
+      expireOverdueProposals: async (now) => {
+        let count = 0;
+        for (const p of this.state.proposals) {
+          if (
+            (p.status === 'PENDING' || p.status === 'COUNTEROFFERED') &&
+            p.expiresAt.getTime() <= now.getTime()
+          ) {
+            p.status = 'EXPIRED';
+            p.respondedAt = cloneDeep(now);
+            p.updatedAt = cloneDeep(now);
+            count++;
+          }
+        }
+        return count;
+      },
+      cancelPendingBetweenUsers: async (userA, userB, now) => {
+        let count = 0;
+        for (const p of this.state.proposals) {
+          const matches =
+            (p.ownerUserId === userA && p.partnerUserId === userB) ||
+            (p.ownerUserId === userB && p.partnerUserId === userA);
+          if (
+            matches &&
+            (p.status === 'PENDING' || p.status === 'COUNTEROFFERED' || p.status === 'DRAFT')
+          ) {
+            p.status = 'CANCELLED';
+            p.respondedAt = cloneDeep(now);
+            p.updatedAt = cloneDeep(now);
+            count++;
+          }
+        }
+        return count;
+      }
+    };
+
+    const scheduledArrests: ScheduledArrestsRepository = {
+      create: async (record) => {
+        const copy = cloneDeep(record);
+        this.state.scheduledArrests.push(copy);
+        return cloneDeep(copy);
+      },
+      findById: async (scheduleId) => {
+        const found = this.state.scheduledArrests.find((s) => s.scheduleId === scheduleId);
+        return found ? cloneDeep(found) : null;
+      },
+      findByIdForUpdate: async (scheduleId) => {
+        const found = this.state.scheduledArrests.find((s) => s.scheduleId === scheduleId);
+        return found ? cloneDeep(found) : null;
+      },
+      listForUser: async (userId, options) => {
+        const filtered = this.state.scheduledArrests
+          .filter((s) => {
+            const roleOk =
+              options.role === 'owner'
+                ? s.ownerUserId === userId
+                : options.role === 'partner'
+                  ? s.partnerUserId === userId
+                  : s.ownerUserId === userId || s.partnerUserId === userId;
+            if (!roleOk) return false;
+            if (options.status && s.status !== options.status) return false;
+            if (options.partnerUserId) {
+              const otherId = s.ownerUserId === userId ? s.partnerUserId : s.ownerUserId;
+              if (otherId !== options.partnerUserId) return false;
+            }
+            if (options.deviceId && s.targetDeviceId !== options.deviceId) return false;
+            return true;
+          })
+          .sort((a, b) => {
+            const nextA = a.nextOccurrenceAt?.getTime() ?? a.createdAt.getTime();
+            const nextB = b.nextOccurrenceAt?.getTime() ?? b.createdAt.getTime();
+            return nextA - nextB;
+          });
+
+        return {
+          items: cloneDeep(filtered.slice(options.offset, options.offset + options.limit)),
+          total: filtered.length,
+          limit: options.limit,
+          offset: options.offset
+        };
+      },
+      updateStatusAndOccurrence: async (
+        scheduleId,
+        updates: {
+          status?: ScheduledArrestStatus;
+          occurrencesCompleted?: number;
+          nextOccurrenceAt?: Date | null;
+          updatedAt: Date;
+        }
+      ) => {
+        const target = this.state.scheduledArrests.find((s) => s.scheduleId === scheduleId);
+        if (!target) {
+          throw Errors.notFound('SCHEDULE_NOT_FOUND', 'Scheduled arrest was not found.');
+        }
+        if (updates.status !== undefined) target.status = updates.status;
+        if (updates.occurrencesCompleted !== undefined)
+          target.occurrencesCompleted = updates.occurrencesCompleted;
+        if (updates.nextOccurrenceAt !== undefined)
+          target.nextOccurrenceAt = cloneDeep(updates.nextOccurrenceAt);
+        target.updatedAt = cloneDeep(updates.updatedAt);
+        return cloneDeep(target);
+      },
+      revokeByPermissionId: async (permissionId, now) => {
+        let count = 0;
+        for (const s of this.state.scheduledArrests) {
+          if (s.permissionId === permissionId && s.status === 'SCHEDULED') {
+            s.status = 'REVOKED';
+            s.updatedAt = cloneDeep(now);
+            count++;
+          }
+        }
+        return count;
+      },
+      revokeBetweenUsers: async (userA, userB, now) => {
+        let count = 0;
+        for (const s of this.state.scheduledArrests) {
+          const matches =
+            (s.ownerUserId === userA && s.partnerUserId === userB) ||
+            (s.ownerUserId === userB && s.partnerUserId === userA);
+          if (matches && s.status === 'SCHEDULED') {
+            s.status = 'REVOKED';
+            s.updatedAt = cloneDeep(now);
             count++;
           }
         }
@@ -1122,6 +1504,9 @@ export class InMemoryDataStore implements DataStore {
       pushTokens,
       partnerships,
       partnerPermissions,
+      approvalPolicies,
+      proposals,
+      scheduledArrests,
       sessions,
       commands,
       releaseRequests,
