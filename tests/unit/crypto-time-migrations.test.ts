@@ -122,6 +122,24 @@ describe('Cryptography, Time Windows, Environment & SQL Migrations', () => {
     ]) {
       expect(v04Joined).toContain(`CREATE TABLE IF NOT EXISTS ${v04Table}`);
     }
+
+    const v06 = files.find((f) => f.version === '004_v06_chat_and_structured_requests');
+    expect(v06).toBeDefined();
+    const v06Joined = v06!.statements.join('\n');
+    for (const v06Table of [
+      'conversations',
+      'conversation_members',
+      'messages',
+      'structured_requests',
+      'temporary_app_access_grants',
+      'session_rule_revisions'
+    ]) {
+      expect(v06Joined).toContain(`CREATE TABLE IF NOT EXISTS ${v06Table}`);
+    }
+    expect(v06Joined).toContain('REFERENCES arrest_sessions(session_id)');
+    expect(v06Joined).toContain('ALTER TABLE session_commands');
+    expect(v06Joined).not.toContain('REFERENCES arrest_sessions(id)');
+    expect(v06Joined).not.toContain('ALTER TABLE commands ');
   });
 
   it('deterministically resolves DST transitions and recurring schedules across IANA timezones', () => {

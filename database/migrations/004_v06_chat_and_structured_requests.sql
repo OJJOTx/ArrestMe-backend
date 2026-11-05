@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS structured_requests (
   CONSTRAINT fk_sr_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
   CONSTRAINT fk_sr_initiator FOREIGN KEY (initiator_user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_sr_recipient FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE CASCADE,
-  CONSTRAINT fk_sr_session FOREIGN KEY (session_id) REFERENCES arrest_sessions(id) ON DELETE SET NULL,
+  CONSTRAINT fk_sr_session FOREIGN KEY (session_id) REFERENCES arrest_sessions(session_id) ON DELETE SET NULL,
   INDEX idx_sr_conv_status (conversation_id, status),
   INDEX idx_sr_session (session_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS temporary_app_access_grants (
   expires_at TIMESTAMP(3) NOT NULL,
   revoked_at TIMESTAMP(3) NULL,
   created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  CONSTRAINT fk_taag_session FOREIGN KEY (session_id) REFERENCES arrest_sessions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_taag_session FOREIGN KEY (session_id) REFERENCES arrest_sessions(session_id) ON DELETE CASCADE,
   CONSTRAINT fk_taag_device FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE,
   CONSTRAINT fk_taag_grantor FOREIGN KEY (granted_by_user_id) REFERENCES users(id) ON DELETE CASCADE,
   INDEX idx_taag_session_pkg (session_id, package_name),
@@ -98,12 +98,12 @@ CREATE TABLE IF NOT EXISTS session_rule_revisions (
   modified_by_user_id VARCHAR(36) NOT NULL,
   rule_changes JSON NOT NULL,
   applied_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  CONSTRAINT fk_srr_session FOREIGN KEY (session_id) REFERENCES arrest_sessions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_srr_session FOREIGN KEY (session_id) REFERENCES arrest_sessions(session_id) ON DELETE CASCADE,
   CONSTRAINT fk_srr_modifier FOREIGN KEY (modified_by_user_id) REFERENCES users(id) ON DELETE CASCADE,
   UNIQUE KEY uk_srr_session_rev (session_id, revision_number)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-ALTER TABLE commands MODIFY COLUMN command_type ENUM(
+ALTER TABLE session_commands MODIFY COLUMN command_type ENUM(
   'START_ARREST',
   'REQUEST_RELEASE',
   'APPROVE_RELEASE',
