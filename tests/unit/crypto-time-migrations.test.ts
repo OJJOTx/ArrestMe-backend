@@ -144,7 +144,7 @@ describe('Cryptography, Time Windows, Environment & SQL Migrations', () => {
 
   it('validates proposal revision response schema accepts both auto-increment strings and UUIDs', async () => {
     const { ProposalRevisionResponseSchema } = await import(
-      '../../src/modules/proposals/proposals.schemas'
+      '../../src/modules/proposals/proposals.schemas.js'
     );
     expect(ProposalRevisionResponseSchema.shape.id.safeParse('1').success).toBe(true);
     expect(ProposalRevisionResponseSchema.shape.id.safeParse('42').success).toBe(true);

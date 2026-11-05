@@ -12,6 +12,7 @@ import {
   type BlockingConfigurationV1,
   type CloudSessionStatus,
   type PaginatedResult,
+  type PartnerPermissionRecord,
   type RemoteExecutionPhase,
   type SessionCommandRecord,
   type SessionType
