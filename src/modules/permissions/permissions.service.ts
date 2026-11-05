@@ -32,6 +32,7 @@ export interface SerializedPartnerPermission {
   };
   proposalId: string | null;
   approvedRevision: number | null;
+  boundSessionId?: string | null;
   exactBlockingConfiguration: ExactApprovedSessionConfig | null;
   maximumSessionDuration: number;
   allowedTimeWindows: AllowedTimeWindowsConfig | null;
@@ -227,6 +228,7 @@ export class PermissionsService {
     options: {
       role: 'granted' | 'received' | 'all';
       activeOnly: boolean;
+      includeConsumed?: boolean;
       limit: number;
       offset: number;
     }
@@ -239,14 +241,36 @@ export class PermissionsService {
 
     const userIds = page.items.flatMap((p) => [p.ownerUserId, p.partnerUserId]);
     const deviceIds = page.items.map((p) => p.targetDeviceId);
+    const oneTimeConsumedIds = page.items
+      .filter((p) => p.oneTimeOnly && p.usedCount >= 1)
+      .map((p) => p.permissionId);
+
     const [users, devices] = await Promise.all([
       this.store.repositories.users.findByIds(userIds),
       this.store.repositories.devices.findByIds(deviceIds)
     ]);
 
+    const boundSessionsMap = new Map<string, string>();
+    if (oneTimeConsumedIds.length > 0) {
+      await Promise.all(
+        oneTimeConsumedIds.map(async (permId) => {
+          const s = await this.store.repositories.sessions.findLatestSessionByAuthorization(permId);
+          if (s) boundSessionsMap.set(permId, s.sessionId);
+        })
+      );
+    }
+
     return {
       ...page,
-      items: page.items.map((item) => this.formatPermission(item, users, devices, now))
+      items: page.items.map((item) =>
+        this.formatPermission(
+          item,
+          users,
+          devices,
+          now,
+          boundSessionsMap.get(item.permissionId) ?? null
+        )
+      )
     };
   }
 
@@ -658,18 +682,28 @@ export class PermissionsService {
   private async hydrateSingle(
     record: PartnerPermissionRecord
   ): Promise<SerializedPartnerPermission> {
-    const [users, devices] = await Promise.all([
+    const [users, devices, boundSession] = await Promise.all([
       this.store.repositories.users.findByIds([record.ownerUserId, record.partnerUserId]),
-      this.store.repositories.devices.findByIds([record.targetDeviceId])
+      this.store.repositories.devices.findByIds([record.targetDeviceId]),
+      record.oneTimeOnly && record.usedCount >= 1
+        ? this.store.repositories.sessions.findLatestSessionByAuthorization(record.permissionId)
+        : Promise.resolve(null)
     ]);
-    return this.formatPermission(record, users, devices, this.clock.now());
+    return this.formatPermission(
+      record,
+      users,
+      devices,
+      this.clock.now(),
+      boundSession?.sessionId ?? null
+    );
   }
 
   public formatPermission(
     record: PartnerPermissionRecord,
     users: Map<string, UserRecord>,
     devices: Map<string, DeviceRecord>,
-    now: Date
+    now: Date,
+    boundSessionId?: string | null
   ): SerializedPartnerPermission {
     const ownerRec = users.get(record.ownerUserId);
     const partnerRec = users.get(record.partnerUserId);
@@ -710,6 +744,7 @@ export class PermissionsService {
           },
       proposalId: record.proposalId ?? null,
       approvedRevision: record.approvedRevision ?? null,
+      boundSessionId: boundSessionId ?? null,
       exactBlockingConfiguration: record.exactBlockingConfiguration ?? null,
       maximumSessionDuration: record.maximumSessionDuration,
       allowedTimeWindows: record.allowedTimeWindows,

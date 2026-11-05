@@ -76,7 +76,11 @@ export const ListPartnerPermissionsQuerySchema = PaginationQuerySchema.extend({
   activeOnly: z
     .union([z.boolean(), z.enum(['true', 'false'])])
     .optional()
-    .transform((v) => v === undefined ? true : v === true || v === 'true')
+    .transform((v) => v === undefined ? true : v === true || v === 'true'),
+  includeConsumed: z
+    .union([z.boolean(), z.enum(['true', 'false'])])
+    .optional()
+    .transform((v) => v === true || v === 'true')
 });
 
 export const SafeDeviceSummarySchema = z.object({
@@ -108,6 +112,7 @@ export const PartnerPermissionResponseSchema = z.object({
   targetDevice: SafeDeviceSummarySchema,
   proposalId: z.string().uuid().nullable().optional(),
   approvedRevision: z.number().int().nullable().optional(),
+  boundSessionId: z.string().uuid().nullable().optional(),
   exactBlockingConfiguration: ExactApprovedSessionConfigSchema.nullable().optional(),
   maximumSessionDuration: z.number().int(),
   allowedTimeWindows: AllowedTimeWindowsSchema.nullable(),

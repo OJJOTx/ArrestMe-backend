@@ -254,6 +254,7 @@ export class SessionsService {
         let commandHardDeadlineMs =
           now.getTime() + (input.commandTtlSeconds ?? this.defaultCommandTtlSeconds) * 1000;
         let verifiedAuthId: string | null = null;
+        let consumedPermission: PartnerPermissionRecord | null = null;
 
         if (input.sessionType === 'SELF_ARREST') {
           if (ownerUserId !== initiatorUserId) {
@@ -277,7 +278,7 @@ export class SessionsService {
             );
           }
 
-          const permission = await this.permissionsService.validateAndConsumeForSessionInTx(
+          consumedPermission = await this.permissionsService.validateAndConsumeForSessionInTx(
             repos,
             {
               authorizationId: input.authorizationId,
@@ -292,8 +293,8 @@ export class SessionsService {
             }
           );
 
-          verifiedAuthId = permission.permissionId;
-          commandHardDeadlineMs = Math.min(commandHardDeadlineMs, permission.expiresAt.getTime());
+          verifiedAuthId = consumedPermission.permissionId;
+          commandHardDeadlineMs = Math.min(commandHardDeadlineMs, consumedPermission.expiresAt.getTime());
         }
 
         // Clean up any stale unexecuted commands on this device before checking active sessions
@@ -354,6 +355,10 @@ export class SessionsService {
             ? { allowedStudyPackages: normalizedBlockingConfig.allowedStudyPackages }
             : {}),
           authorizationId: verifiedAuthId,
+          ...(consumedPermission?.proposalId ? { proposalId: consumedPermission.proposalId } : {}),
+          ...(consumedPermission?.approvedRevision
+            ? { approvedRevision: consumedPermission.approvedRevision }
+            : {}),
           initiatedByUserId: initiatorUserId
         };
 

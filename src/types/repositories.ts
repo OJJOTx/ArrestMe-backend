@@ -157,6 +157,7 @@ export interface PartnerPermissionsRepository {
     options: {
       role: 'granted' | 'received' | 'all';
       activeOnly: boolean;
+      includeConsumed?: boolean;
       now: Date;
       limit: number;
       offset: number;

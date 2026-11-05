@@ -1023,6 +1023,7 @@ class MysqlPartnerPermissionsRepository implements PartnerPermissionsRepository 
     options: {
       role: 'granted' | 'received' | 'all';
       activeOnly: boolean;
+      includeConsumed?: boolean;
       now: Date;
       limit: number;
       offset: number;
@@ -1043,7 +1044,11 @@ class MysqlPartnerPermissionsRepository implements PartnerPermissionsRepository 
     }
 
     if (options.activeOnly) {
-      conditions.push('revoked_at IS NULL AND expires_at > ? AND (one_time_only = 0 OR used_count < 1)');
+      if (options.includeConsumed) {
+        conditions.push('revoked_at IS NULL AND expires_at > ?');
+      } else {
+        conditions.push('revoked_at IS NULL AND expires_at > ? AND (one_time_only = 0 OR used_count < 1)');
+      }
       params.push(toMysqlDateTime(options.now));
     }
 

@@ -592,7 +592,7 @@ export class InMemoryDataStore implements DataStore {
             if (options.activeOnly) {
               if (p.revokedAt !== null) return false;
               if (p.expiresAt.getTime() <= options.now.getTime()) return false;
-              if (p.oneTimeOnly && p.usedCount >= 1) return false;
+              if (!options.includeConsumed && p.oneTimeOnly && p.usedCount >= 1) return false;
             }
             return true;
           })
