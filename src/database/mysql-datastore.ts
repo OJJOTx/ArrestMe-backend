@@ -24,12 +24,17 @@ import {
   type CloudSessionStatus,
   type CommandStatus,
   type CommandType,
+  type ConversationMemberRecord,
+  type ConversationRecord,
   type DeviceAppCatalogRecord,
   type DevicePlatform,
   type DevicePushTokenRecord,
   type DeviceRecord,
   type DeviceStatus,
   type ExactApprovedSessionConfig,
+  type MessageDeliveryStatus,
+  type MessageRecord,
+  type MessageType,
   type NormalizedProposalConfigurationV1,
   type PaginatedResult,
   type PartnerApprovalPolicyRecord,
@@ -45,17 +50,24 @@ import {
   type ScheduledArrestStatus,
   type SelectableAppCatalogItem,
   type SessionCommandRecord,
+  type SessionRuleRevisionRecord,
   type SessionSyncEventRecord,
   type SessionType,
+  type StructuredRequestRecord,
+  type StructuredRequestStatus,
+  type StructuredRequestType,
+  type TemporaryAppAccessGrantRecord,
   type UserRecord
 } from '../types/domain';
 import type {
   ApprovalPoliciesRepository,
   AuditLogsRepository,
   CommandsRepository,
+  ConversationsRepository,
   DataStore,
   DeviceAppCatalogsRepository,
   DevicesRepository,
+  MessagesRepository,
   PartnerPermissionsRepository,
   PartnershipsRepository,
   ProposalsRepository,
@@ -64,7 +76,10 @@ import type {
   ReleaseRequestsRepository,
   RepositoryBundle,
   ScheduledArrestsRepository,
+  SessionRuleRevisionsRepository,
   SessionsRepository,
+  StructuredRequestsRepository,
+  TemporaryAppAccessGrantsRepository,
   UsersRepository
 } from '../types/repositories';
 
@@ -2751,6 +2766,485 @@ class MysqlDeviceAppCatalogsRepository implements DeviceAppCatalogsRepository {
   }
 }
 
+function mapConversationRow(row: RowDataPacket): ConversationRecord {
+  return {
+    id: row.id,
+    partnershipId: row.partnership_id,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+    lastMessageAt: row.last_message_at ? new Date(row.last_message_at) : null
+  };
+}
+
+function mapConversationMemberRow(row: RowDataPacket): ConversationMemberRecord {
+  return {
+    conversationId: row.conversation_id,
+    userId: row.user_id,
+    joinedAt: new Date(row.joined_at),
+    lastReadMessageId: row.last_read_message_id ?? null,
+    lastReadAt: row.last_read_at ? new Date(row.last_read_at) : null
+  };
+}
+
+function mapMessageRow(row: RowDataPacket): MessageRecord {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    senderUserId: row.sender_user_id,
+    clientMessageId: row.client_message_id,
+    messageType: row.message_type as MessageType,
+    textContent: row.text_content ?? null,
+    structuredPayload: row.structured_payload
+      ? typeof row.structured_payload === 'string'
+        ? JSON.parse(row.structured_payload)
+        : row.structured_payload
+      : null,
+    status: row.status as MessageDeliveryStatus,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at)
+  };
+}
+
+function mapStructuredRequestRow(row: RowDataPacket): StructuredRequestRecord {
+  return {
+    id: row.id,
+    messageId: row.message_id,
+    conversationId: row.conversation_id,
+    requestType: row.request_type as StructuredRequestType,
+    initiatorUserId: row.initiator_user_id,
+    recipientUserId: row.recipient_user_id,
+    sessionId: row.session_id ?? null,
+    status: row.status as StructuredRequestStatus,
+    durationMinutes: row.duration_minutes ?? null,
+    targetPackage: row.target_package ?? null,
+    parametersJson: row.parameters_json
+      ? typeof row.parameters_json === 'string'
+        ? JSON.parse(row.parameters_json)
+        : row.parameters_json
+      : null,
+    decisionReason: row.decision_reason ?? null,
+    decidedAt: row.decided_at ? new Date(row.decided_at) : null,
+    expiresAt: row.expires_at ? new Date(row.expires_at) : null,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at)
+  };
+}
+
+function mapTemporaryAppAccessGrantRow(row: RowDataPacket): TemporaryAppAccessGrantRecord {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    deviceId: row.device_id,
+    packageName: row.package_name,
+    grantedDurationMinutes: row.granted_duration_minutes,
+    grantedByUserId: row.granted_by_user_id,
+    startsAt: new Date(row.starts_at),
+    expiresAt: new Date(row.expires_at),
+    revokedAt: row.revoked_at ? new Date(row.revoked_at) : null,
+    createdAt: new Date(row.created_at)
+  };
+}
+
+function mapSessionRuleRevisionRow(row: RowDataPacket): SessionRuleRevisionRecord {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    revisionNumber: row.revision_number,
+    modifiedByUserId: row.modified_by_user_id,
+    ruleChanges: typeof row.rule_changes === 'string'
+      ? JSON.parse(row.rule_changes)
+      : row.rule_changes,
+    appliedAt: new Date(row.applied_at)
+  };
+}
+
+class MysqlConversationsRepository implements ConversationsRepository {
+  constructor(private readonly db: SqlExecutor) {}
+
+  async create(conversation: ConversationRecord, memberUserIds: string[]): Promise<ConversationRecord> {
+    await this.db.execute(
+      `INSERT INTO conversations (id, partnership_id, created_at, updated_at, last_message_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        conversation.id,
+        conversation.partnershipId,
+        toMysqlDateTime(conversation.createdAt),
+        toMysqlDateTime(conversation.updatedAt),
+        conversation.lastMessageAt ? toMysqlDateTime(conversation.lastMessageAt) : null
+      ]
+    );
+    for (const userId of memberUserIds) {
+      await this.db.execute(
+        `INSERT INTO conversation_members (conversation_id, user_id, joined_at)
+         VALUES (?, ?, ?)`,
+        [conversation.id, userId, toMysqlDateTime(conversation.createdAt)]
+      );
+    }
+    return conversation;
+  }
+
+  async findById(id: string): Promise<ConversationRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM conversations WHERE id = ? LIMIT 1',
+      [id]
+    );
+    return rows[0] ? mapConversationRow(rows[0]) : null;
+  }
+
+  async findByPartnershipId(partnershipId: string): Promise<ConversationRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM conversations WHERE partnership_id = ? LIMIT 1',
+      [partnershipId]
+    );
+    return rows[0] ? mapConversationRow(rows[0]) : null;
+  }
+
+  async listByUser(
+    userId: string,
+    options: { limit: number; offset: number }
+  ): Promise<PaginatedResult<ConversationRecord>> {
+    const [countRows] = await this.db.execute<RowDataPacket[]>(
+      `SELECT COUNT(*) as total FROM conversations c
+       INNER JOIN conversation_members cm ON c.id = cm.conversation_id
+       WHERE cm.user_id = ?`,
+      [userId]
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      `SELECT c.* FROM conversations c
+       INNER JOIN conversation_members cm ON c.id = cm.conversation_id
+       WHERE cm.user_id = ?
+       ORDER BY COALESCE(c.last_message_at, c.created_at) DESC
+       LIMIT ? OFFSET ?`,
+      [userId, String(options.limit), String(options.offset)]
+    );
+    return {
+      items: rows.map(mapConversationRow),
+      total,
+      limit: options.limit,
+      offset: options.offset
+    };
+  }
+
+  async findMember(conversationId: string, userId: string): Promise<ConversationMemberRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM conversation_members WHERE conversation_id = ? AND user_id = ? LIMIT 1',
+      [conversationId, userId]
+    );
+    return rows[0] ? mapConversationMemberRow(rows[0]) : null;
+  }
+
+  async listMembers(conversationId: string): Promise<ConversationMemberRecord[]> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM conversation_members WHERE conversation_id = ? ORDER BY joined_at ASC',
+      [conversationId]
+    );
+    return rows.map(mapConversationMemberRow);
+  }
+
+  async updateLastMessageAt(id: string, lastMessageAt: Date, updatedAt: Date): Promise<void> {
+    await this.db.execute(
+      'UPDATE conversations SET last_message_at = ?, updated_at = ? WHERE id = ?',
+      [toMysqlDateTime(lastMessageAt), toMysqlDateTime(updatedAt), id]
+    );
+  }
+
+  async updateLastRead(
+    conversationId: string,
+    userId: string,
+    params: { lastReadMessageId: string; lastReadAt: Date }
+  ): Promise<void> {
+    await this.db.execute(
+      `UPDATE conversation_members
+       SET last_read_message_id = ?, last_read_at = ?
+       WHERE conversation_id = ? AND user_id = ?`,
+      [params.lastReadMessageId, toMysqlDateTime(params.lastReadAt), conversationId, userId]
+    );
+  }
+}
+
+class MysqlMessagesRepository implements MessagesRepository {
+  constructor(private readonly db: SqlExecutor) {}
+
+  async create(message: MessageRecord): Promise<MessageRecord> {
+    await this.db.execute(
+      `INSERT INTO messages
+        (id, conversation_id, sender_user_id, client_message_id, message_type, text_content, structured_payload, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE id = id`,
+      [
+        message.id,
+        message.conversationId,
+        message.senderUserId,
+        message.clientMessageId,
+        message.messageType,
+        message.textContent,
+        message.structuredPayload ? JSON.stringify(message.structuredPayload) : null,
+        message.status,
+        toMysqlDateTime(message.createdAt),
+        toMysqlDateTime(message.updatedAt)
+      ]
+    );
+    return message;
+  }
+
+  async findById(id: string): Promise<MessageRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM messages WHERE id = ? LIMIT 1',
+      [id]
+    );
+    return rows[0] ? mapMessageRow(rows[0]) : null;
+  }
+
+  async findByClientMessageId(conversationId: string, clientMessageId: string): Promise<MessageRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM messages WHERE conversation_id = ? AND client_message_id = ? LIMIT 1',
+      [conversationId, clientMessageId]
+    );
+    return rows[0] ? mapMessageRow(rows[0]) : null;
+  }
+
+  async listByConversation(
+    conversationId: string,
+    options: {
+      beforeDate?: Date;
+      afterDate?: Date;
+      limit: number;
+      offset: number;
+    }
+  ): Promise<PaginatedResult<MessageRecord>> {
+    const conditions = ['conversation_id = ?'];
+    const params: SqlParam[] = [conversationId];
+
+    if (options.beforeDate) {
+      conditions.push('created_at < ?');
+      params.push(toMysqlDateTime(options.beforeDate));
+    }
+    if (options.afterDate) {
+      conditions.push('created_at > ?');
+      params.push(toMysqlDateTime(options.afterDate));
+    }
+
+    const whereClause = conditions.join(' AND ');
+    const [countRows] = await this.db.execute<RowDataPacket[]>(
+      `SELECT COUNT(*) as total FROM messages WHERE ${whereClause}`,
+      params
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    params.push(String(options.limit), String(options.offset));
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      `SELECT * FROM messages WHERE ${whereClause} ORDER BY created_at ASC LIMIT ? OFFSET ?`,
+      params
+    );
+    return {
+      items: rows.map(mapMessageRow),
+      total,
+      limit: options.limit,
+      offset: options.offset
+    };
+  }
+
+  async countUnreadForUser(conversationId: string, lastReadAt: Date | null, userId: string): Promise<number> {
+    if (!lastReadAt) {
+      const [rows] = await this.db.execute<RowDataPacket[]>(
+        'SELECT COUNT(*) as total FROM messages WHERE conversation_id = ? AND sender_user_id != ?',
+        [conversationId, userId]
+      );
+      return Number(rows[0]?.total ?? 0);
+    }
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT COUNT(*) as total FROM messages WHERE conversation_id = ? AND sender_user_id != ? AND created_at > ?',
+      [conversationId, userId, toMysqlDateTime(lastReadAt)]
+    );
+    return Number(rows[0]?.total ?? 0);
+  }
+
+  async updateStatus(id: string, status: MessageDeliveryStatus, updatedAt: Date): Promise<void> {
+    await this.db.execute(
+      'UPDATE messages SET status = ?, updated_at = ? WHERE id = ?',
+      [status, toMysqlDateTime(updatedAt), id]
+    );
+  }
+}
+
+class MysqlStructuredRequestsRepository implements StructuredRequestsRepository {
+  constructor(private readonly db: SqlExecutor) {}
+
+  async create(request: StructuredRequestRecord): Promise<StructuredRequestRecord> {
+    await this.db.execute(
+      `INSERT INTO structured_requests
+        (id, message_id, conversation_id, request_type, initiator_user_id, recipient_user_id, session_id, status, duration_minutes, target_package, parameters_json, decision_reason, decided_at, expires_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        request.id,
+        request.messageId,
+        request.conversationId,
+        request.requestType,
+        request.initiatorUserId,
+        request.recipientUserId,
+        request.sessionId,
+        request.status,
+        request.durationMinutes,
+        request.targetPackage,
+        request.parametersJson ? JSON.stringify(request.parametersJson) : null,
+        request.decisionReason,
+        request.decidedAt ? toMysqlDateTime(request.decidedAt) : null,
+        request.expiresAt ? toMysqlDateTime(request.expiresAt) : null,
+        toMysqlDateTime(request.createdAt),
+        toMysqlDateTime(request.updatedAt)
+      ]
+    );
+    return request;
+  }
+
+  async findById(id: string): Promise<StructuredRequestRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM structured_requests WHERE id = ? LIMIT 1',
+      [id]
+    );
+    return rows[0] ? mapStructuredRequestRow(rows[0]) : null;
+  }
+
+  async findByMessageId(messageId: string): Promise<StructuredRequestRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM structured_requests WHERE message_id = ? LIMIT 1',
+      [messageId]
+    );
+    return rows[0] ? mapStructuredRequestRow(rows[0]) : null;
+  }
+
+  async findPendingBySessionAndType(
+    sessionId: string,
+    requestType: StructuredRequestType
+  ): Promise<StructuredRequestRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      `SELECT * FROM structured_requests
+       WHERE session_id = ? AND request_type = ? AND status = 'PENDING'
+       LIMIT 1`,
+      [sessionId, requestType]
+    );
+    return rows[0] ? mapStructuredRequestRow(rows[0]) : null;
+  }
+
+  async updateDecision(
+    id: string,
+    params: {
+      status: StructuredRequestStatus;
+      decisionReason: string | null;
+      decidedAt: Date;
+      updatedAt: Date;
+    }
+  ): Promise<StructuredRequestRecord> {
+    await this.db.execute(
+      `UPDATE structured_requests
+       SET status = ?, decision_reason = ?, decided_at = ?, updated_at = ?
+       WHERE id = ?`,
+      [
+        params.status,
+        params.decisionReason,
+        toMysqlDateTime(params.decidedAt),
+        toMysqlDateTime(params.updatedAt),
+        id
+      ]
+    );
+    const updated = await this.findById(id);
+    if (!updated) {
+      throw Errors.notFound('REQUEST_NOT_FOUND', 'Structured request was not found.');
+    }
+    return updated;
+  }
+}
+
+class MysqlTemporaryAppAccessGrantsRepository implements TemporaryAppAccessGrantsRepository {
+  constructor(private readonly db: SqlExecutor) {}
+
+  async create(grant: TemporaryAppAccessGrantRecord): Promise<TemporaryAppAccessGrantRecord> {
+    await this.db.execute(
+      `INSERT INTO temporary_app_access_grants
+        (id, session_id, device_id, package_name, granted_duration_minutes, granted_by_user_id, starts_at, expires_at, revoked_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        grant.id,
+        grant.sessionId,
+        grant.deviceId,
+        grant.packageName,
+        grant.grantedDurationMinutes,
+        grant.grantedByUserId,
+        toMysqlDateTime(grant.startsAt),
+        toMysqlDateTime(grant.expiresAt),
+        grant.revokedAt ? toMysqlDateTime(grant.revokedAt) : null,
+        toMysqlDateTime(grant.createdAt)
+      ]
+    );
+    return grant;
+  }
+
+  async findById(id: string): Promise<TemporaryAppAccessGrantRecord | null> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM temporary_app_access_grants WHERE id = ? LIMIT 1',
+      [id]
+    );
+    return rows[0] ? mapTemporaryAppAccessGrantRow(rows[0]) : null;
+  }
+
+  async listActiveBySession(sessionId: string, now: Date): Promise<TemporaryAppAccessGrantRecord[]> {
+    const ts = toMysqlDateTime(now);
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      `SELECT * FROM temporary_app_access_grants
+       WHERE session_id = ? AND revoked_at IS NULL AND starts_at <= ? AND expires_at > ?
+       ORDER BY expires_at ASC`,
+      [sessionId, ts, ts]
+    );
+    return rows.map(mapTemporaryAppAccessGrantRow);
+  }
+
+  async revoke(id: string, revokedAt: Date): Promise<void> {
+    await this.db.execute(
+      'UPDATE temporary_app_access_grants SET revoked_at = ? WHERE id = ?',
+      [toMysqlDateTime(revokedAt), id]
+    );
+  }
+}
+
+class MysqlSessionRuleRevisionsRepository implements SessionRuleRevisionsRepository {
+  constructor(private readonly db: SqlExecutor) {}
+
+  async create(revision: SessionRuleRevisionRecord): Promise<SessionRuleRevisionRecord> {
+    await this.db.execute(
+      `INSERT INTO session_rule_revisions
+        (id, session_id, revision_number, modified_by_user_id, rule_changes, applied_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        revision.id,
+        revision.sessionId,
+        revision.revisionNumber,
+        revision.modifiedByUserId,
+        JSON.stringify(revision.ruleChanges),
+        toMysqlDateTime(revision.appliedAt)
+      ]
+    );
+    return revision;
+  }
+
+  async listBySession(sessionId: string): Promise<SessionRuleRevisionRecord[]> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT * FROM session_rule_revisions WHERE session_id = ? ORDER BY revision_number ASC',
+      [sessionId]
+    );
+    return rows.map(mapSessionRuleRevisionRow);
+  }
+
+  async getLatestRevisionNumber(sessionId: string): Promise<number> {
+    const [rows] = await this.db.execute<RowDataPacket[]>(
+      'SELECT MAX(revision_number) as max_rev FROM session_rule_revisions WHERE session_id = ?',
+      [sessionId]
+    );
+    return Number(rows[0]?.max_rev ?? 0);
+  }
+}
+
 function createBundle(executor: SqlExecutor): RepositoryBundle {
   return {
     users: new MysqlUsersRepository(executor),
@@ -2766,7 +3260,12 @@ function createBundle(executor: SqlExecutor): RepositoryBundle {
     sessions: new MysqlSessionsRepository(executor),
     commands: new MysqlCommandsRepository(executor),
     releaseRequests: new MysqlReleaseRequestsRepository(executor),
-    auditLogs: new MysqlAuditLogsRepository(executor)
+    auditLogs: new MysqlAuditLogsRepository(executor),
+    conversations: new MysqlConversationsRepository(executor),
+    messages: new MysqlMessagesRepository(executor),
+    structuredRequests: new MysqlStructuredRequestsRepository(executor),
+    temporaryAppAccessGrants: new MysqlTemporaryAppAccessGrantsRepository(executor),
+    sessionRuleRevisions: new MysqlSessionRuleRevisionsRepository(executor)
   };
 }
 

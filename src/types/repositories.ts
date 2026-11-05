@@ -12,10 +12,14 @@ import type {
   CloudSessionStatus,
   CommandStatus,
   CommandType,
+  ConversationMemberRecord,
+  ConversationRecord,
   DeviceAppCatalogRecord,
   DevicePushTokenRecord,
   DeviceRecord,
   DeviceStatus,
+  MessageDeliveryStatus,
+  MessageRecord,
   NormalizedProposalConfigurationV1,
   PaginatedResult,
   PartnerApprovalPolicyRecord,
@@ -30,8 +34,13 @@ import type {
   ScheduledArrestStatus,
   SelectableAppCatalogItem,
   SessionCommandRecord,
+  SessionRuleRevisionRecord,
   SessionSyncEventRecord,
   SessionType,
+  StructuredRequestRecord,
+  StructuredRequestStatus,
+  StructuredRequestType,
+  TemporaryAppAccessGrantRecord,
   UserRecord
 } from './domain';
 import type { AllowedTimeWindowsConfig } from '../shared/time';
@@ -433,6 +442,73 @@ export interface DeviceAppCatalogsRepository {
   }): Promise<DeviceAppCatalogRecord>;
 }
 
+export interface ConversationsRepository {
+  create(conversation: ConversationRecord, memberUserIds: string[]): Promise<ConversationRecord>;
+  findById(id: string): Promise<ConversationRecord | null>;
+  findByPartnershipId(partnershipId: string): Promise<ConversationRecord | null>;
+  listByUser(
+    userId: string,
+    options: { limit: number; offset: number }
+  ): Promise<PaginatedResult<ConversationRecord>>;
+  findMember(conversationId: string, userId: string): Promise<ConversationMemberRecord | null>;
+  listMembers(conversationId: string): Promise<ConversationMemberRecord[]>;
+  updateLastMessageAt(id: string, lastMessageAt: Date, updatedAt: Date): Promise<void>;
+  updateLastRead(
+    conversationId: string,
+    userId: string,
+    params: { lastReadMessageId: string; lastReadAt: Date }
+  ): Promise<void>;
+}
+
+export interface MessagesRepository {
+  create(message: MessageRecord): Promise<MessageRecord>;
+  findById(id: string): Promise<MessageRecord | null>;
+  findByClientMessageId(conversationId: string, clientMessageId: string): Promise<MessageRecord | null>;
+  listByConversation(
+    conversationId: string,
+    options: {
+      beforeDate?: Date;
+      afterDate?: Date;
+      limit: number;
+      offset: number;
+    }
+  ): Promise<PaginatedResult<MessageRecord>>;
+  countUnreadForUser(conversationId: string, lastReadAt: Date | null, userId: string): Promise<number>;
+  updateStatus(id: string, status: MessageDeliveryStatus, updatedAt: Date): Promise<void>;
+}
+
+export interface StructuredRequestsRepository {
+  create(request: StructuredRequestRecord): Promise<StructuredRequestRecord>;
+  findById(id: string): Promise<StructuredRequestRecord | null>;
+  findByMessageId(messageId: string): Promise<StructuredRequestRecord | null>;
+  findPendingBySessionAndType(
+    sessionId: string,
+    requestType: StructuredRequestType
+  ): Promise<StructuredRequestRecord | null>;
+  updateDecision(
+    id: string,
+    params: {
+      status: StructuredRequestStatus;
+      decisionReason: string | null;
+      decidedAt: Date;
+      updatedAt: Date;
+    }
+  ): Promise<StructuredRequestRecord>;
+}
+
+export interface TemporaryAppAccessGrantsRepository {
+  create(grant: TemporaryAppAccessGrantRecord): Promise<TemporaryAppAccessGrantRecord>;
+  findById(id: string): Promise<TemporaryAppAccessGrantRecord | null>;
+  listActiveBySession(sessionId: string, now: Date): Promise<TemporaryAppAccessGrantRecord[]>;
+  revoke(id: string, revokedAt: Date): Promise<void>;
+}
+
+export interface SessionRuleRevisionsRepository {
+  create(revision: SessionRuleRevisionRecord): Promise<SessionRuleRevisionRecord>;
+  listBySession(sessionId: string): Promise<SessionRuleRevisionRecord[]>;
+  getLatestRevisionNumber(sessionId: string): Promise<number>;
+}
+
 export interface RepositoryBundle {
   users: UsersRepository;
   refreshTokens: RefreshTokensRepository;
@@ -448,6 +524,11 @@ export interface RepositoryBundle {
   commands: CommandsRepository;
   releaseRequests: ReleaseRequestsRepository;
   auditLogs: AuditLogsRepository;
+  conversations: ConversationsRepository;
+  messages: MessagesRepository;
+  structuredRequests: StructuredRequestsRepository;
+  temporaryAppAccessGrants: TemporaryAppAccessGrantsRepository;
+  sessionRuleRevisions: SessionRuleRevisionsRepository;
 }
 
 export interface DataStore {

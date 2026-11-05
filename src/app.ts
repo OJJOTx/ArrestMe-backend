@@ -20,6 +20,8 @@ import {
 } from './middleware/authenticate';
 import { registerAuthRoutes } from './modules/auth/auth.routes';
 import { AuthService } from './modules/auth/auth.service';
+import { registerChatRoutes } from './modules/chat/chat.routes';
+import { ChatService } from './modules/chat/chat.service';
 import { registerCommandsRoutes } from './modules/commands/commands.routes';
 import { CommandsService } from './modules/commands/commands.service';
 import { registerDevicesRoutes } from './modules/devices/devices.routes';
@@ -328,6 +330,14 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     clock,
     env.DEFAULT_COMMAND_TTL_SECONDS
   );
+  const chatService = new ChatService(
+    store,
+    commandsService,
+    notificationService,
+    auditService,
+    clock,
+    env.DEFAULT_COMMAND_TTL_SECONDS
+  );
   const maintenanceService = new MaintenanceService(
     store,
     notificationService,
@@ -355,6 +365,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   registerSessionsRoutes(app, { sessionsService, authenticate });
   registerCommandsRoutes(app, { commandsService, authenticate });
   registerReleasesRoutes(app, { releasesService, authenticate });
+  registerChatRoutes(app, { chatService, authenticate });
 
   return app;
 }

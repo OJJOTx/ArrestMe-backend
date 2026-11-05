@@ -6,7 +6,10 @@ export const CommandTypeSchema = z.enum([
   'APPROVE_RELEASE',
   'DENY_RELEASE',
   'END_SESSION',
-  'SYNC_SESSION'
+  'SYNC_SESSION',
+  'APPLY_TEMPORARY_APP_ACCESS',
+  'REVOKE_TEMPORARY_APP_ACCESS',
+  'UPDATE_SESSION_RULES'
 ]);
 
 export const CommandStatusSchema = z.enum([

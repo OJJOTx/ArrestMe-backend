@@ -135,7 +135,10 @@ export class NotificationService {
       | 'PROPOSAL_COUNTEROFFERED'
       | 'PROPOSAL_ACCEPTED'
       | 'PROPOSAL_REJECTED'
-      | 'SCHEDULE_CREATED',
+      | 'SCHEDULE_CREATED'
+      | 'CHAT_MESSAGE'
+      | 'STRUCTURED_REQUEST'
+      | 'REQUEST_RESPONSE',
     resourceId: string
   ): Promise<void> {
     if (!this.fcm.isEnabled) return;

@@ -16,10 +16,13 @@ import {
   type CloudSessionStatus,
   type CommandStatus,
   type CommandType,
+  type ConversationMemberRecord,
+  type ConversationRecord,
   type DeviceAppCatalogRecord,
   type DevicePushTokenRecord,
   type DeviceRecord,
   type DeviceStatus,
+  type MessageRecord,
   type NormalizedProposalConfigurationV1,
   type PartnerApprovalPolicyRecord,
   type PartnerPermissionRecord,
@@ -33,17 +36,22 @@ import {
   type ScheduledArrestStatus,
   type SelectableAppCatalogItem,
   type SessionCommandRecord,
+  type SessionRuleRevisionRecord,
   type SessionSyncEventRecord,
   type SessionType,
+  type StructuredRequestRecord,
+  type TemporaryAppAccessGrantRecord,
   type UserRecord
 } from '../types/domain';
 import type {
   ApprovalPoliciesRepository,
   AuditLogsRepository,
   CommandsRepository,
+  ConversationsRepository,
   DataStore,
   DeviceAppCatalogsRepository,
   DevicesRepository,
+  MessagesRepository,
   PartnerPermissionsRepository,
   PartnershipsRepository,
   ProposalsRepository,
@@ -52,7 +60,10 @@ import type {
   ReleaseRequestsRepository,
   RepositoryBundle,
   ScheduledArrestsRepository,
+  SessionRuleRevisionsRepository,
   SessionsRepository,
+  StructuredRequestsRepository,
+  TemporaryAppAccessGrantsRepository,
   UsersRepository
 } from '../types/repositories';
 
@@ -73,6 +84,12 @@ interface MemoryState {
   syncEvents: SessionSyncEventRecord[];
   releaseRequests: ReleaseRequestRecord[];
   auditLogs: AuditLogRecord[];
+  conversations: ConversationRecord[];
+  conversationMembers: ConversationMemberRecord[];
+  messages: MessageRecord[];
+  structuredRequests: StructuredRequestRecord[];
+  temporaryAppAccessGrants: TemporaryAppAccessGrantRecord[];
+  sessionRuleRevisions: SessionRuleRevisionRecord[];
   nextCommandSeq: number;
   nextSyncEventId: number;
   nextAuditId: number;
@@ -104,6 +121,12 @@ export class InMemoryDataStore implements DataStore {
     syncEvents: [],
     releaseRequests: [],
     auditLogs: [],
+    conversations: [],
+    conversationMembers: [],
+    messages: [],
+    structuredRequests: [],
+    temporaryAppAccessGrants: [],
+    sessionRuleRevisions: [],
     nextCommandSeq: 1,
     nextSyncEventId: 1,
     nextAuditId: 1
@@ -1554,6 +1577,220 @@ export class InMemoryDataStore implements DataStore {
       }
     };
 
+    const conversations: ConversationsRepository = {
+      create: async (conversation, memberUserIds) => {
+        const copy = cloneDeep(conversation);
+        this.state.conversations.push(copy);
+        for (const userId of memberUserIds) {
+          this.state.conversationMembers.push({
+            conversationId: copy.id,
+            userId,
+            joinedAt: cloneDeep(copy.createdAt),
+            lastReadMessageId: null,
+            lastReadAt: null
+          });
+        }
+        return cloneDeep(copy);
+      },
+      findById: async (id) => {
+        const found = this.state.conversations.find((c) => c.id === id);
+        return found ? cloneDeep(found) : null;
+      },
+      findByPartnershipId: async (partnershipId) => {
+        const found = this.state.conversations.find((c) => c.partnershipId === partnershipId);
+        return found ? cloneDeep(found) : null;
+      },
+      listByUser: async (userId, options) => {
+        const myConvIds = new Set(
+          this.state.conversationMembers
+            .filter((m) => m.userId === userId)
+            .map((m) => m.conversationId)
+        );
+        const filtered = this.state.conversations
+          .filter((c) => myConvIds.has(c.id))
+          .sort((a, b) => {
+            const timeA = a.lastMessageAt?.getTime() ?? a.createdAt.getTime();
+            const timeB = b.lastMessageAt?.getTime() ?? b.createdAt.getTime();
+            return timeB - timeA;
+          });
+        return {
+          items: cloneDeep(filtered.slice(options.offset, options.offset + options.limit)),
+          total: filtered.length,
+          limit: options.limit,
+          offset: options.offset
+        };
+      },
+      findMember: async (conversationId, userId) => {
+        const found = this.state.conversationMembers.find(
+          (m) => m.conversationId === conversationId && m.userId === userId
+        );
+        return found ? cloneDeep(found) : null;
+      },
+      listMembers: async (conversationId) => {
+        const found = this.state.conversationMembers.filter(
+          (m) => m.conversationId === conversationId
+        );
+        return cloneDeep(found);
+      },
+      updateLastMessageAt: async (id, lastMessageAt, updatedAt) => {
+        const found = this.state.conversations.find((c) => c.id === id);
+        if (found) {
+          found.lastMessageAt = cloneDeep(lastMessageAt);
+          found.updatedAt = cloneDeep(updatedAt);
+        }
+      },
+      updateLastRead: async (conversationId, userId, params) => {
+        const member = this.state.conversationMembers.find(
+          (m) => m.conversationId === conversationId && m.userId === userId
+        );
+        if (member) {
+          member.lastReadMessageId = params.lastReadMessageId;
+          member.lastReadAt = cloneDeep(params.lastReadAt);
+        }
+      }
+    };
+
+    const messages: MessagesRepository = {
+      create: async (message) => {
+        const existing = this.state.messages.find(
+          (m) =>
+            m.conversationId === message.conversationId &&
+            m.clientMessageId === message.clientMessageId
+        );
+        if (existing) {
+          return cloneDeep(existing);
+        }
+        const copy = cloneDeep(message);
+        this.state.messages.push(copy);
+        return cloneDeep(copy);
+      },
+      findById: async (id) => {
+        const found = this.state.messages.find((m) => m.id === id);
+        return found ? cloneDeep(found) : null;
+      },
+      findByClientMessageId: async (conversationId, clientMessageId) => {
+        const found = this.state.messages.find(
+          (m) => m.conversationId === conversationId && m.clientMessageId === clientMessageId
+        );
+        return found ? cloneDeep(found) : null;
+      },
+      listByConversation: async (conversationId, options) => {
+        const filtered = this.state.messages
+          .filter((m) => {
+            if (m.conversationId !== conversationId) return false;
+            if (options.beforeDate && m.createdAt >= options.beforeDate) return false;
+            if (options.afterDate && m.createdAt <= options.afterDate) return false;
+            return true;
+          })
+          .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        return {
+          items: cloneDeep(filtered.slice(options.offset, options.offset + options.limit)),
+          total: filtered.length,
+          limit: options.limit,
+          offset: options.offset
+        };
+      },
+      countUnreadForUser: async (conversationId, lastReadAt, userId) => {
+        return this.state.messages.filter(
+          (m) =>
+            m.conversationId === conversationId &&
+            m.senderUserId !== userId &&
+            (lastReadAt === null || m.createdAt.getTime() > lastReadAt.getTime())
+        ).length;
+      },
+      updateStatus: async (id, status, updatedAt) => {
+        const found = this.state.messages.find((m) => m.id === id);
+        if (found) {
+          found.status = status;
+          found.updatedAt = cloneDeep(updatedAt);
+        }
+      }
+    };
+
+    const structuredRequests: StructuredRequestsRepository = {
+      create: async (request) => {
+        const copy = cloneDeep(request);
+        this.state.structuredRequests.push(copy);
+        return cloneDeep(copy);
+      },
+      findById: async (id) => {
+        const found = this.state.structuredRequests.find((r) => r.id === id);
+        return found ? cloneDeep(found) : null;
+      },
+      findByMessageId: async (messageId) => {
+        const found = this.state.structuredRequests.find((r) => r.messageId === messageId);
+        return found ? cloneDeep(found) : null;
+      },
+      findPendingBySessionAndType: async (sessionId, requestType) => {
+        const found = this.state.structuredRequests.find(
+          (r) =>
+            r.sessionId === sessionId &&
+            r.requestType === requestType &&
+            r.status === 'PENDING'
+        );
+        return found ? cloneDeep(found) : null;
+      },
+      updateDecision: async (id, params) => {
+        const found = this.state.structuredRequests.find((r) => r.id === id);
+        if (!found) {
+          throw Errors.notFound('REQUEST_NOT_FOUND', 'Structured request was not found.');
+        }
+        found.status = params.status;
+        found.decisionReason = params.decisionReason;
+        found.decidedAt = cloneDeep(params.decidedAt);
+        found.updatedAt = cloneDeep(params.updatedAt);
+        return cloneDeep(found);
+      }
+    };
+
+    const temporaryAppAccessGrants: TemporaryAppAccessGrantsRepository = {
+      create: async (grant) => {
+        const copy = cloneDeep(grant);
+        this.state.temporaryAppAccessGrants.push(copy);
+        return cloneDeep(copy);
+      },
+      findById: async (id) => {
+        const found = this.state.temporaryAppAccessGrants.find((g) => g.id === id);
+        return found ? cloneDeep(found) : null;
+      },
+      listActiveBySession: async (sessionId, now) => {
+        const nowMs = now.getTime();
+        const active = this.state.temporaryAppAccessGrants.filter(
+          (g) =>
+            g.sessionId === sessionId &&
+            g.revokedAt === null &&
+            g.startsAt.getTime() <= nowMs &&
+            g.expiresAt.getTime() > nowMs
+        );
+        return cloneDeep(active);
+      },
+      revoke: async (id, revokedAt) => {
+        const found = this.state.temporaryAppAccessGrants.find((g) => g.id === id);
+        if (found) {
+          found.revokedAt = cloneDeep(revokedAt);
+        }
+      }
+    };
+
+    const sessionRuleRevisions: SessionRuleRevisionsRepository = {
+      create: async (revision) => {
+        const copy = cloneDeep(revision);
+        this.state.sessionRuleRevisions.push(copy);
+        return cloneDeep(copy);
+      },
+      listBySession: async (sessionId) => {
+        const found = this.state.sessionRuleRevisions
+          .filter((r) => r.sessionId === sessionId)
+          .sort((a, b) => a.revisionNumber - b.revisionNumber);
+        return cloneDeep(found);
+      },
+      getLatestRevisionNumber: async (sessionId) => {
+        const revisions = this.state.sessionRuleRevisions.filter((r) => r.sessionId === sessionId);
+        if (revisions.length === 0) return 0;
+        return Math.max(...revisions.map((r) => r.revisionNumber));
+      }
+    };
+
     return {
       users,
       refreshTokens,
@@ -1568,7 +1805,12 @@ export class InMemoryDataStore implements DataStore {
       sessions,
       commands,
       releaseRequests,
-      auditLogs
+      auditLogs,
+      conversations,
+      messages,
+      structuredRequests,
+      temporaryAppAccessGrants,
+      sessionRuleRevisions
     };
   }
 }

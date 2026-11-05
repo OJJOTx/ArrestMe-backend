@@ -391,7 +391,10 @@ export type CommandType =
   | 'APPROVE_RELEASE'
   | 'DENY_RELEASE'
   | 'END_SESSION'
-  | 'SYNC_SESSION';
+  | 'SYNC_SESSION'
+  | 'APPLY_TEMPORARY_APP_ACCESS'
+  | 'REVOKE_TEMPORARY_APP_ACCESS'
+  | 'UPDATE_SESSION_RULES';
 
 export type CommandStatus =
   | 'PENDING'
@@ -481,6 +484,96 @@ export interface AuditLogRecord {
   requestId: string | null;
   metadata: Record<string, unknown> | null;
   createdAt: Date;
+}
+
+export type MessageType = 'TEXT' | 'STRUCTURED_REQUEST' | 'SYSTEM_EVENT';
+export type MessageDeliveryStatus = 'SENT' | 'DELIVERED' | 'READ';
+
+export type StructuredRequestType =
+  | 'REQUEST_EARLY_RELEASE'
+  | 'REQUEST_TEMPORARY_APP_ACCESS'
+  | 'REQUEST_ADD_ALLOWED_APP'
+  | 'REQUEST_REMOVE_BLOCKED_APP'
+  | 'REQUEST_CHANGE_BLOCKING_MODE'
+  | 'REQUEST_SESSION_EXTENSION'
+  | 'REQUEST_SCHEDULE_CHANGE'
+  | 'REQUEST_CUSTOM_ACTION';
+
+export type StructuredRequestStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  | 'EXPIRED';
+
+export interface ConversationRecord {
+  id: string;
+  partnershipId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  lastMessageAt: Date | null;
+}
+
+export interface ConversationMemberRecord {
+  conversationId: string;
+  userId: string;
+  joinedAt: Date;
+  lastReadMessageId: string | null;
+  lastReadAt: Date | null;
+}
+
+export interface MessageRecord {
+  id: string;
+  conversationId: string;
+  senderUserId: string;
+  clientMessageId: string;
+  messageType: MessageType;
+  textContent: string | null;
+  structuredPayload: Record<string, unknown> | null;
+  status: MessageDeliveryStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface StructuredRequestRecord {
+  id: string;
+  messageId: string;
+  conversationId: string;
+  requestType: StructuredRequestType;
+  initiatorUserId: string;
+  recipientUserId: string;
+  sessionId: string | null;
+  status: StructuredRequestStatus;
+  durationMinutes: number | null;
+  targetPackage: string | null;
+  parametersJson: Record<string, unknown> | null;
+  decisionReason: string | null;
+  decidedAt: Date | null;
+  expiresAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface TemporaryAppAccessGrantRecord {
+  id: string;
+  sessionId: string;
+  deviceId: string;
+  packageName: string;
+  grantedDurationMinutes: number;
+  grantedByUserId: string;
+  startsAt: Date;
+  expiresAt: Date;
+  revokedAt: Date | null;
+  createdAt: Date;
+}
+
+export interface SessionRuleRevisionRecord {
+  id: string;
+  sessionId: string;
+  revisionNumber: number;
+  modifiedByUserId: string;
+  ruleChanges: Record<string, unknown>;
+  appliedAt: Date;
 }
 
 export interface PaginatedResult<T> {
