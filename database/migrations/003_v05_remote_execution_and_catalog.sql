@@ -19,5 +19,5 @@ CREATE TABLE IF NOT EXISTS device_app_catalogs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE scheduled_arrests
-  ADD COLUMN IF NOT EXISTS last_materialized_session_id CHAR(36) NULL AFTER next_occurrence_at,
-  ADD COLUMN IF NOT EXISTS last_materialized_at DATETIME(3) NULL AFTER last_materialized_session_id;
+  ADD COLUMN last_materialized_session_id CHAR(36) NULL AFTER next_occurrence_at,
+  ADD COLUMN last_materialized_at DATETIME(3) NULL AFTER last_materialized_session_id;
