@@ -146,7 +146,7 @@ export const NormalizedProposalConfigurationSchema = z.object({
 });
 
 export const ProposalRevisionResponseSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(),
   proposalId: z.string().uuid(),
   revisionNumber: z.number().int(),
   proposer: PublicUserSchema,

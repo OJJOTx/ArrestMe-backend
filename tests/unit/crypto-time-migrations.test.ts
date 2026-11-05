@@ -142,6 +142,18 @@ describe('Cryptography, Time Windows, Environment & SQL Migrations', () => {
     expect(v06Joined).not.toContain('ALTER TABLE commands ');
   });
 
+  it('validates proposal revision response schema accepts both auto-increment strings and UUIDs', async () => {
+    const { ProposalRevisionResponseSchema } = await import(
+      '../../src/modules/proposals/proposals.schemas'
+    );
+    expect(ProposalRevisionResponseSchema.shape.id.safeParse('1').success).toBe(true);
+    expect(ProposalRevisionResponseSchema.shape.id.safeParse('42').success).toBe(true);
+    expect(
+      ProposalRevisionResponseSchema.shape.id.safeParse('f47ac10b-58cc-4372-a567-0e02b2c3d479')
+        .success
+    ).toBe(true);
+  });
+
   it('deterministically resolves DST transitions and recurring schedules across IANA timezones', () => {
     // Fall-back DST in America/New_York: 2026-11-01 01:30 occurs twice (EDT -04:00 = 05:30Z, EST -05:00 = 06:30Z)
     // Deterministic rule: selects the first occurrence (05:30:00.000Z)

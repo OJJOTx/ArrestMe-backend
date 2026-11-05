@@ -1413,15 +1413,15 @@ class MysqlProposalsRepository implements ProposalsRepository {
 
       await this.db.execute(
         `INSERT INTO arrest_proposal_revisions
-          (id, proposal_id, revision_number, proposer_user_id, recipient_user_id,
+          (proposal_id, revision_number, proposer_user_id, recipient_user_id, request_type,
            normalized_configuration, reason, status, created_at, expires_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          initialRevision.id,
           initialRevision.proposalId,
           initialRevision.revisionNumber,
           initialRevision.proposerUserId,
           initialRevision.recipientUserId,
+          proposal.requestType,
           JSON.stringify(initialRevision.normalizedConfiguration),
           initialRevision.reason,
           initialRevision.status,
@@ -1568,15 +1568,15 @@ class MysqlProposalsRepository implements ProposalsRepository {
 
     await this.db.execute(
       `INSERT INTO arrest_proposal_revisions
-        (id, proposal_id, revision_number, proposer_user_id, recipient_user_id,
+        (proposal_id, revision_number, proposer_user_id, recipient_user_id, request_type,
          normalized_configuration, reason, status, created_at, expires_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        newRevision.id,
         newRevision.proposalId,
         newRevision.revisionNumber,
         newRevision.proposerUserId,
         newRevision.recipientUserId,
+        updates.requestType,
         JSON.stringify(newRevision.normalizedConfiguration),
         newRevision.reason,
         newRevision.status,
